@@ -14,9 +14,15 @@ import { createWalkMotion, planWalk, rampedProgress, type WalkMotion, type WalkP
 
 const theme = heroesVillainsTheme;
 
-/** Fração da duração gasta acelerando (e outro tanto desacelerando). */
+/** Fração da duração gasta acelerando (e outro tanto desacelerando), ao andar. */
 const WALK_RAMP = 0.18;
-/** Transição entre a pose parada e a caminhada. */
+/**
+ * A partir de quantas casas de deslocamento a peça troca `walkClip` por
+ * `runClip` (quando o modelo tem um configurado — hoje só a torre vilã).
+ * Sem `runClip`, qualquer distância usa `walkClip`, como sempre.
+ */
+const RUN_DISTANCE_THRESHOLD = 2;
+/** Transição entre a pose parada e a caminhada/corrida. */
 const BLEND_LAMBDA = 16;
 /** Velocidade com que a peça se vira para a direção do movimento. */
 const TURN_LAMBDA = 11;
@@ -35,22 +41,68 @@ function dampAngle(current: number, target: number, lambda: number, delta: numbe
   return current + diff * (1 - Math.exp(-lambda * delta));
 }
 
+/**
+ * Toca (ou desliga) a action de locomoção `action` conforme `active`, mesmo
+ * mecanismo pro walkClip e pro runClip — só muda qual dos dois está ativo no
+ * momento. Como em qualquer clipe de root motion, a fase é ditada por quem
+ * chama (o trajeto em `Piece`), não pelo relógio do mixer: a action fica
+ * `paused` e recebe `time` a cada quadro.
+ */
+function driveLocomotion(
+  action: THREE.AnimationAction | null | undefined,
+  motion: WalkMotion | null,
+  active: boolean,
+  phase: number | null,
+  delta: number,
+  startedRef: { current: boolean },
+): void {
+  if (!action || !motion) return;
+  if (active) {
+    if (!startedRef.current) {
+      action.reset().play();
+      startedRef.current = true;
+    }
+    action.paused = true;
+    action.time = (phase ?? 0) % motion.duration;
+  } else if (startedRef.current && action.weight < 0.01) {
+    action.stop();
+    startedRef.current = false;
+  }
+  action.weight = THREE.MathUtils.damp(action.weight, active ? 1 : 0, BLEND_LAMBDA, delta);
+}
+
 // Extrair o root motion custa uma varredura das keyframes, então é feito uma
-// única vez por modelo — o resultado é imutável e compartilhado por todas as
-// instâncias (os oito peões usam o mesmo clipe).
+// única vez por modelo+clipe — o resultado é imutável e compartilhado por
+// todas as instâncias (os oito peões usam o mesmo clipe).
 const motionCache = new Map<string, WalkMotion | null>();
 
-function useWalkMotion(config: PieceModelConfig): WalkMotion | null {
+function loadMotion(
+  path: string,
+  animations: THREE.AnimationClip[],
+  clipName: string | undefined,
+  footfalls: number[] | undefined,
+  scale: number,
+): WalkMotion | null {
+  if (!clipName || !footfalls) return null;
+  const cacheKey = `${path}::${clipName}`;
+  const cached = motionCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  const source = animations.find((clip) => clip.name === clipName) ?? null;
+  const motion = source ? createWalkMotion(source, scale, footfalls) : null;
+  motionCache.set(cacheKey, motion);
+  return motion;
+}
+
+/** `walkClip` e `runClip` (quando existir) do modelo, cada um sua própria WalkMotion. */
+function useLocomotionMotions(config: PieceModelConfig): { walk: WalkMotion | null; run: WalkMotion | null } {
   const { animations } = useGLTF(config.path);
-  return useMemo(() => {
-    if (!config.walkClip || !config.walkFootfalls) return null;
-    const cached = motionCache.get(config.path);
-    if (cached !== undefined) return cached;
-    const source = animations.find((clip) => clip.name === config.walkClip) ?? null;
-    const motion = source ? createWalkMotion(source, config.scale, config.walkFootfalls) : null;
-    motionCache.set(config.path, motion);
-    return motion;
-  }, [animations, config]);
+  return useMemo(
+    () => ({
+      walk: loadMotion(config.path, animations, config.walkClip, config.walkFootfalls, config.scale),
+      run: loadMotion(config.path, animations, config.runClip, config.runFootfalls, config.scale),
+    }),
+    [animations, config],
+  );
 }
 
 /**
@@ -71,16 +123,23 @@ type PhaseRef = { current: number | null };
  */
 type ActionRef = { current: 'idle' | 'attack' };
 
+/** Qual das duas locomoções (se houver runClip) está em uso no trajeto atual. */
+type LocomotionRef = { current: 'walk' | 'run' | null };
+
 function PieceModel({
   color,
   type,
-  motion,
+  walkMotion,
+  runMotion,
+  locomotionRef,
   phaseRef,
   actionRef,
 }: {
   color: ChessPiece['color'];
   type: ChessPiece['type'];
-  motion: WalkMotion | null;
+  walkMotion: WalkMotion | null;
+  runMotion: WalkMotion | null;
+  locomotionRef: LocomotionRef;
   phaseRef: PhaseRef;
   actionRef: ActionRef;
 }) {
@@ -95,10 +154,32 @@ function PieceModel({
 
   // Troca o clipe de caminhada pela versão in-place: o avanço do osso raiz foi
   // extraído e agora é aplicado por `Piece` na posição do grupo.
+  //
+  // Quando introClip e attackClip apontam para o MESMO clipe (torre vilã:
+  // ambos usam o golpe), duplica o clipe sob um nome à parte para a intro.
+  // Sem isso, `actions[introClipName]` e `actions[attackClipName]` seriam o
+  // mesmo objeto AnimationAction, e o bloco de peso da intro (mais abaixo, no
+  // useFrame) rodaria depois do bloco de golpe e cancelaria o peso que o
+  // golpe acabou de subir — o ataque nunca chegaria a peso 1.
+  const INTRO_CLONE_SUFFIX = '__intro-clone';
   const clips = useMemo(() => {
-    if (!motion || !config.walkClip) return animations;
-    return animations.map((clip) => (clip.name === config.walkClip ? motion.clip : clip));
-  }, [animations, motion, config.walkClip]);
+    let result = animations;
+    if (walkMotion && config.walkClip) {
+      result = result.map((clip) => (clip.name === config.walkClip ? walkMotion.clip : clip));
+    }
+    if (runMotion && config.runClip) {
+      result = result.map((clip) => (clip.name === config.runClip ? runMotion.clip : clip));
+    }
+    if (config.introClip && config.introClip === config.attackClip) {
+      const shared = result.find((clip) => clip.name === config.introClip);
+      if (shared) {
+        const introClone = shared.clone();
+        introClone.name = `${config.introClip}${INTRO_CLONE_SUFFIX}`;
+        result = [...result, introClone];
+      }
+    }
+    return result;
+  }, [animations, walkMotion, runMotion, config.walkClip, config.runClip, config.introClip, config.attackClip]);
 
   // A maioria das peças é malha estática sem `animations` e este hook vira
   // no-op. Modelos gerados com a ferramenta de animação da Tripo (hoje os
@@ -110,8 +191,13 @@ function PieceModel({
   // depois que `animationRoot.current` existe, o que não vale ainda na
   // primeira renderização — resolver por useMemo congelaria tudo em undefined.
   // Buscar por nome dentro de efeitos/useFrame pega a action de verdade.
-  const introClipName = names.length > 0 ? (config.introClip && names.includes(config.introClip) ? config.introClip : names[0]) : null;
+  const introSourceName =
+    config.introClip && config.introClip === config.attackClip
+      ? `${config.introClip}${INTRO_CLONE_SUFFIX}`
+      : config.introClip;
+  const introClipName = names.length > 0 ? (introSourceName && names.includes(introSourceName) ? introSourceName : names[0]) : null;
   const walkClipName = config.walkClip && names.includes(config.walkClip) ? config.walkClip : null;
+  const runClipName = config.runClip && names.includes(config.runClip) ? config.runClip : null;
   const attackClipName = config.attackClip && names.includes(config.attackClip) ? config.attackClip : null;
 
   useEffect(() => {
@@ -148,34 +234,30 @@ function PieceModel({
   }, [actions, attackClipName, mixer, actionRef]);
 
   const walkStartedRef = useRef(false);
+  const runStartedRef = useRef(false);
   const attackStartedRef = useRef(false);
 
   useFrame((_, delta) => {
     const walking = phaseRef.current !== null;
     const attacking = actionRef.current === 'attack';
+    const locomotion = locomotionRef.current;
 
-    if (walkClipName && motion) {
-      const walkAction = actions[walkClipName];
-      if (walkAction) {
-        if (walking) {
-          if (!walkStartedRef.current) {
-            walkAction.reset().play();
-            walkStartedRef.current = true;
-          }
-          // A fase é ditada pela locomoção, não pelo relógio do mixer: com a
-          // action pausada o mixer avalia o clipe exatamente em `time`. É o
-          // que garante que a pose corresponda ao ponto do trajeto, quadro a
-          // quadro, e que a caminhada termine no footfall planejado em vez de
-          // onde o tempo cair.
-          walkAction.paused = true;
-          walkAction.time = phaseRef.current! % motion.duration;
-        } else if (walkStartedRef.current && walkAction.weight < 0.01) {
-          walkAction.stop();
-          walkStartedRef.current = false;
-        }
-        walkAction.weight = THREE.MathUtils.damp(walkAction.weight, walking ? 1 : 0, BLEND_LAMBDA, delta);
-      }
-    }
+    driveLocomotion(
+      walkClipName ? actions[walkClipName] : undefined,
+      walkMotion,
+      walking && locomotion === 'walk',
+      phaseRef.current,
+      delta,
+      walkStartedRef,
+    );
+    driveLocomotion(
+      runClipName ? actions[runClipName] : undefined,
+      runMotion,
+      walking && locomotion === 'run',
+      phaseRef.current,
+      delta,
+      runStartedRef,
+    );
 
     if (attackClipName) {
       const attackAction = actions[attackClipName];
@@ -224,6 +306,10 @@ interface WalkState {
   target: THREE.Vector3;
   direction: THREE.Vector3;
   plan: WalkPlan;
+  /** A WalkMotion usada neste trajeto — caminhada ou corrida, decidida em `beginTravel`. */
+  motion: WalkMotion;
+  /** Fração de rampa deste trajeto — fixa ao andar, proporcional à distância ao correr. */
+  ramp: number;
   duration: number;
   elapsed: number;
   yaw: number;
@@ -241,7 +327,7 @@ export function Piece({ piece }: PieceProps) {
   const selectedSquare = useGameStore((s) => s.selectedSquare);
   const isSelected = selectedSquare === piece.square;
   const config = getModelConfig(piece.color, piece.type);
-  const motion = useWalkMotion(config);
+  const { walk: walkMotion, run: runMotion } = useLocomotionMotions(config);
   const pieceWalkAnimation = useSettingsStore((s) => s.pieceWalkAnimation);
   // Multiplicador da cadência autoral. Como a posição vem da fase, mudar o
   // ritmo acelera a caminhada inteira sem nunca descolar o pé do chão — o que
@@ -252,6 +338,7 @@ export function Piece({ piece }: PieceProps) {
   const glideRef = useRef<GlideState | null>(null);
   const phaseRef = useRef<number | null>(null);
   const actionRef = useRef<'idle' | 'attack'>('idle');
+  const locomotionRef = useRef<'walk' | 'run' | null>(null);
 
   // Casa de destino de uma captura com golpe, enquanto a peça ainda não
   // começou a andar até lá — não nulo do instante em que o golpe começa até
@@ -269,6 +356,13 @@ export function Piece({ piece }: PieceProps) {
   // 'idle', o fantasma da peça capturada é liberado (`releasePendingGhost`)
   // para começar a cair.
   const kickPendingReleaseRef = useRef(false);
+  // Captura a mais de 1 casa de distância (torre): o golpe só começa quando a
+  // peça chega adjacente ao alvo — antes disso ela anda/corre normalmente até
+  // lá. Guarda o destino real e o defensor para o golpe disparar assim que
+  // essa aproximação terminar (ver `useFrame`, no fim do bloco de caminhada).
+  // Sem isso o golpe tocaria a distância, como se a peça "já soubesse" que
+  // vai vencer antes de chegar perto do adversário.
+  const pendingAttackRef = useRef<{ target: THREE.Vector3; defenderId: string; yaw: number } | null>(null);
 
   // Guarda a última casa em vez de um booleano de "montado": em dev o Strict
   // Mode reexecuta este efeito logo após montar, e uma flag já leria "montado"
@@ -302,6 +396,7 @@ export function Piece({ piece }: PieceProps) {
       walkRef.current = null;
       glideRef.current = null;
       phaseRef.current = null;
+      locomotionRef.current = null;
       return;
     }
 
@@ -312,20 +407,37 @@ export function Piece({ piece }: PieceProps) {
     const yaw = Math.atan2(direction.x, direction.z) - config.rotation[1];
     direction.normalize();
 
+    // Casas são unidades de mundo (SQUARE_SIZE = 1) e a torre só anda em reta,
+    // então `distance` já é o número de casas do lance. Acima do limiar troca
+    // `walkClip` por `runClip` (se o modelo tiver um configurado).
+    const distanceSquares = Math.round(distance);
+    const useRun = distanceSquares > RUN_DISTANCE_THRESHOLD && runMotion !== null;
+    const motion = useRun ? runMotion : walkMotion;
+
     if (!motion || !pieceWalkAnimation) {
       walkRef.current = null;
       phaseRef.current = null;
+      locomotionRef.current = null;
       glideRef.current = { from, target, elapsed: 0 };
       return;
     }
 
     const plan = planWalk(motion, distance);
+    // Correndo, a rampa cobre proporcionalmente a última casa do trajeto
+    // (1/distanceSquares) em vez da fração fixa da caminhada — como a fase
+    // avança ~linear fora das próprias rampas, isso faz a desaceleração já
+    // ter começado ao entrar na penúltima casa, qualquer que seja a distância.
+    const ramp = useRun ? 1 / distanceSquares : WALK_RAMP;
+
     glideRef.current = null;
+    locomotionRef.current = useRun ? 'run' : 'walk';
     walkRef.current = {
       from,
       target,
       direction,
       plan,
+      motion,
+      ramp,
       duration: Math.max(0.15, plan.totalPhase / Math.max(0.1, pieceWalkTempo)),
       elapsed: 0,
       yaw,
@@ -355,36 +467,56 @@ export function Piece({ piece }: PieceProps) {
       walkRef.current = null;
       glideRef.current = null;
       phaseRef.current = null;
+      locomotionRef.current = null;
       captureTargetRef.current = null;
       captureDefenderIdRef.current = null;
+      pendingAttackRef.current = null;
       return;
     }
 
     if (lastCapture?.attackerId === piece.id && config.attackClip) {
-      // Esta peça capturou: o golpe acontece primeiro, parada na casa de
-      // origem, virada para o adversário. A caminhada só começa depois que o
+      const direction = target.clone().sub(from);
+      const distanceSquares = Math.round(direction.length());
+      const yaw = Math.atan2(direction.x, direction.z) - config.rotation[1];
+
+      if (distanceSquares > 1) {
+        // Captura à distância: anda/corre normalmente até ficar adjacente ao
+        // alvo (uma casa antes) — o golpe só dispara quando essa aproximação
+        // terminar, no bloco de chegada da caminhada em `useFrame`.
+        const approach = target.clone().addScaledVector(direction.clone().normalize(), -1);
+        captureTargetRef.current = null;
+        captureDefenderIdRef.current = null;
+        pendingAttackRef.current = { target, defenderId: lastCapture.defenderId, yaw };
+        beginTravel(from, approach);
+        return;
+      }
+
+      // Já adjacente: o golpe acontece direto, parada na casa de origem,
+      // virada para o adversário. A caminhada (1 casa) só começa depois que o
       // golpe termina — e, se o adversário tiver queda, só depois que a queda
       // também termina (ver `useFrame` abaixo, que faz esse acompanhamento).
-      const direction = target.clone().sub(from);
-      captureYawRef.current = Math.atan2(direction.x, direction.z) - config.rotation[1];
+      captureYawRef.current = yaw;
       captureTargetRef.current = target;
       captureDefenderIdRef.current = lastCapture.defenderId;
+      pendingAttackRef.current = null;
       kickPendingReleaseRef.current = true;
       walkRef.current = null;
       glideRef.current = null;
       phaseRef.current = null;
+      locomotionRef.current = null;
       actionRef.current = 'attack';
       return;
     }
 
     captureTargetRef.current = null;
     captureDefenderIdRef.current = null;
+    pendingAttackRef.current = null;
     beginTravel(from, target);
     // beginTravel não é memoizada, mas fecha sobre os mesmos valores já
     // listados abaixo — incluí-la só faria o efeito rodar de novo a cada
     // render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [piece.square, piece.id, motion, pieceWalkAnimation, pieceWalkTempo, config.rotation, config.attackClip]);
+  }, [piece.square, piece.id, walkMotion, runMotion, pieceWalkAnimation, pieceWalkTempo, config.rotation, config.attackClip]);
 
   useFrame((_, delta) => {
     const group = groupRef.current;
@@ -413,15 +545,15 @@ export function Piece({ piece }: PieceProps) {
     }
 
     const walk = walkRef.current;
-    if (walk && motion) {
+    if (walk) {
       walk.elapsed += delta;
       const u = Math.min(1, walk.elapsed / walk.duration);
-      const phase = walk.plan.startPhase + walk.plan.totalPhase * rampedProgress(u, WALK_RAMP);
+      const phase = walk.plan.startPhase + walk.plan.totalPhase * rampedProgress(u, walk.ramp);
       phaseRef.current = phase;
 
       // Posição = avanço do próprio clipe. Não há interpolação independente
       // para a pose "alcançar": o chão percorrido é o que a animação diz.
-      const travelled = (motion.displacementAt(phase) - walk.plan.startDisplacement) * walk.plan.warp;
+      const travelled = (walk.motion.displacementAt(phase) - walk.plan.startDisplacement) * walk.plan.warp;
       group.position.copy(walk.from).addScaledVector(walk.direction, travelled);
 
       if (u >= 1) {
@@ -430,6 +562,20 @@ export function Piece({ piece }: PieceProps) {
         group.position.copy(walk.target);
         walkRef.current = null;
         phaseRef.current = null;
+        locomotionRef.current = null;
+
+        // Chegou adjacente ao alvo de uma captura à distância: dispara o
+        // golpe agora, no lugar de onde a aproximação parou (não na casa de
+        // origem original).
+        const pending = pendingAttackRef.current;
+        if (pending) {
+          pendingAttackRef.current = null;
+          captureYawRef.current = pending.yaw;
+          captureTargetRef.current = pending.target;
+          captureDefenderIdRef.current = pending.defenderId;
+          kickPendingReleaseRef.current = true;
+          actionRef.current = 'attack';
+        }
       }
     } else {
       const glide = glideRef.current;
@@ -463,7 +609,15 @@ export function Piece({ piece }: PieceProps) {
         select(piece.square);
       }}
     >
-      <PieceModel color={piece.color} type={piece.type} motion={motion} phaseRef={phaseRef} actionRef={actionRef} />
+      <PieceModel
+        color={piece.color}
+        type={piece.type}
+        walkMotion={walkMotion}
+        runMotion={runMotion}
+        locomotionRef={locomotionRef}
+        phaseRef={phaseRef}
+        actionRef={actionRef}
+      />
       {isSelected && (
         <pointLight position={[0, 1.6, 0]} intensity={0.8} color={visual.accentColor} distance={2.8} />
       )}

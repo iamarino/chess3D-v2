@@ -35,6 +35,19 @@ export interface PieceModelConfig {
    */
   walkFootfalls?: number[];
   /**
+   * Clipe de corrida, usado em vez de `walkClip` quando o lance percorre mais
+   * de `RUN_DISTANCE_THRESHOLD` casas (ver `Piece.tsx`) — hoje só a torre
+   * vilã tem. Sem isso, qualquer distância usa `walkClip`. Mesmo mecanismo de
+   * root motion do `walkClip` (posição derivada da fase, pé não escorrega);
+   * a rampa de desaceleração no fim do trajeto também muda quando a corrida
+   * está ativa: cobre exatamente a última casa do trajeto (proporcional à
+   * distância), em vez da fração fixa usada na caminhada — ver
+   * docs/animacao-de-pecas.md.
+   */
+  runClip?: string;
+  /** Footfalls de `runClip`, mesmo critério de medição de `walkFootfalls`. */
+  runFootfalls?: number[];
+  /**
    * Clipe tocado uma vez, no lugar, quando esta peça vai capturar outra —
    * toca primeiro, parada na casa de origem e já virada para o adversário; a
    * caminhada até a casa de destino só começa depois que ele (e a queda do
@@ -96,7 +109,69 @@ export const MODEL_CONFIGS: Record<PieceColor, Record<PieceType, PieceModelConfi
     // "front" already faces the board center unrotated (unlike the hero king).
     king: { path: '/models/villain_king.glb', scale: 1.32, rotation: [0, 0, 0] },
     queen: trimeshConfig('/models/villain_queen.glb'),
-    rook: trimeshConfig('/models/villain_rook.glb'),
+    // Tripo-generated com rig + 5 clipes. Identificação por
+    // `scripts/analisar-caminhada.mjs` + conferência visual (2026-08-11):
+    //
+    //   [0] NlaTrack      — caminhada (walkClip)
+    //   [1] NlaTrack.001  — corrida (runClip)
+    //   [2] NlaTrack.002  — golpe (attackClip, e também introClip — ver nota abaixo)
+    //   [3] NlaTrack.003  — comemoração (cogitado para introClip, descartado — ver nota abaixo)
+    //   [4] NlaTrack.004  — queda (hitClip); identificado por eliminação (o
+    //       único clipe que sobrou depois dos outros quatro), confirmado
+    //       visualmente (2026-08-11)
+    //
+    // Frente já olha para o centro do tabuleiro em rotação identidade, como o
+    // resto do time.
+    //
+    // O export original vinha com 1,78 milhão de triângulos (72,6 MB, dos
+    // quais ~70 MB só da malha) para uma torre; passado por
+    // `gltf-transform simplify --ratio 0.025 --error 0.001` (preserva
+    // esqueleto/skinning/animações, só decima a malha), caiu para 44,6k
+    // triângulos / 4,77 MB — mesma receita usada no villain_pawn. Escala
+    // 1.43 é uma primeira estimativa (altura bruta 0.803, entre o pawn e o
+    // king) pendente de conferência visual; refazer a decimação com o mesmo
+    // comando se o asset for trocado de novo.
+    //
+    // introClip: sem isso, `Piece.tsx` cai no primeiro clipe do arquivo
+    // (NlaTrack, amplitude 1.1), que toca uma vez e congela na última pose —
+    // a torre "andava" para fora da casa assim que aparecia. `NlaTrack.003`
+    // (comemoração, deslocamento líquido de só 0.015 unidade de mundo) foi o
+    // primeiro substituto por não arrastar a peça, mas achamos o golpe mais
+    // interessante como pose de entrada/repouso — por pedido, a torre agora
+    // usa o próprio `NlaTrack.002` (golpe) como introClip também. Como
+    // introClip === attackClip aqui, `Piece.tsx` duplica o clipe sob um nome
+    // à parte para a intro (ver comentário em `clips` no PieceModel) — sem
+    // isso as duas ações disputariam o mesmo peso e o golpe nunca chegaria a
+    // tocar cheio.
+    //
+    // attackClip: `NlaTrack.002` — confirmado visualmente como o golpe da
+    // torre; deslocamento líquido baixíssimo (0.0002 unidade de mundo), então
+    // não arrasta a peça para fora da casa central onde o golpe é tocado.
+    //
+    // hitClip: `NlaTrack.004` — toca uma vez, parada na própria casa, quando
+    // a torre é capturada (mecanismo genérico de `GhostPiece.tsx` +
+    // `useGameStore`, o mesmo já usado pelo peão vilão); ao terminar, a torre
+    // some da cena. Sem relação com o root motion do walkClip/runClip — a
+    // peça já está parada quando a queda começa.
+    //
+    // walkClip/runClip: `NlaTrack` anda (passada 0.392 un./passo, 1 casa em 3
+    // passos — 17,7% de correção de passada, um pouco acima do ~15% em que a
+    // correção começa a ficar visível; o asset não tem uma passada melhor
+    // disponível). `NlaTrack.001` corre (passada 1.037 un./passo, quase 1
+    // passo por casa, 3,7% de correção). A partir de 3 casas de deslocamento
+    // (`RUN_DISTANCE_THRESHOLD` em `Piece.tsx`) a torre troca para a corrida.
+    rook: {
+      path: '/models/villain_rook.glb',
+      scale: 1.43,
+      rotation: [0, 0, 0],
+      introClip: 'NlaTrack.002',
+      walkClip: 'NlaTrack',
+      walkFootfalls: [0.27, 0.73, 1.2, 1.66],
+      runClip: 'NlaTrack.001',
+      runFootfalls: [0.34, 0.63, 0.96],
+      attackClip: 'NlaTrack.002',
+      hitClip: 'NlaTrack.004',
+    },
     bishop: trimeshConfig('/models/villain_bishop.glb'),
     knight: trimeshConfig('/models/villain_knight.glb'),
     // Tripo-generated com rig + 4 clipes: parado com braços cruzados (NlaTrack,
