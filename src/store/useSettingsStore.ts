@@ -67,7 +67,10 @@ export const useSettingsStore = create<SettingsState>()(
       showLegalMoves: true,
       pieceWalkAnimation: true,
       pieceWalkTempo: 1.15,
-      pieceModelOffsets: {},
+      // Peão vilão: 1.1x mais raso que o herói e a malha não fica centrada
+      // sozinha — sem isso ele fica visivelmente à frente do centro da
+      // casa em relação ao peão herói.
+      pieceModelOffsets: { 'villain-pawn': { x: 0, y: 0, z: -0.17 } },
       showCalibrationRuler: false,
       setQuality: (quality) => set({ quality }),
       setCinematicCamera: (cinematicCamera) => set({ cinematicCamera }),
@@ -84,22 +87,37 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'chess3d-settings',
-      version: 1,
+      version: 2,
       // v0 guardava `pieceWalkDuration` (segundos fixos por jogada) e
       // `pieceWalkOvershoot` (calibração do ponto de parada). Os dois sumiram
       // quando a caminhada passou a ser dirigida pelo root motion do clipe: a
       // duração agora vem da distância e a parada é exata por construção.
       // Descartar é o certo — um overshoot herdado voltaria a deslocar a peça.
       migrate: (persisted, version) => {
-        if (version >= 1) return persisted as Partial<SettingsState>;
-        const { pieceWalkDuration, pieceWalkOvershoot, ...rest } =
-          (persisted ?? {}) as Partial<SettingsState> & {
-            pieceWalkDuration?: number;
-            pieceWalkOvershoot?: number;
+        let state = persisted as Partial<SettingsState> & {
+          pieceWalkDuration?: number;
+          pieceWalkOvershoot?: number;
+        };
+
+        if (version < 1) {
+          const { pieceWalkDuration, pieceWalkOvershoot, ...rest } = state ?? {};
+          void pieceWalkDuration;
+          void pieceWalkOvershoot;
+          state = rest;
+        }
+
+        if (version < 2) {
+          // O objeto `pieceModelOffsets` salvo é substituído inteiro pelo persist
+          // (sem merge profundo), então o default novo do peão vilão só chega em
+          // sessões antigas — que já calibraram o peão herói — por aqui.
+          const offsets = state?.pieceModelOffsets ?? {};
+          state = {
+            ...state,
+            pieceModelOffsets: { 'villain-pawn': { x: 0, y: 0, z: -0.17 }, ...offsets },
           };
-        void pieceWalkDuration;
-        void pieceWalkOvershoot;
-        return rest;
+        }
+
+        return state;
       },
     },
   ),

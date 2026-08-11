@@ -15,6 +15,7 @@ import { CameraDirector } from './CameraDirector';
 import { CheckAura } from './effects/CheckAura';
 import { EffectsLayer } from './effects/EffectsLayer';
 import { Environment } from './Environment';
+import { GhostPiece } from './GhostPiece';
 import { Piece } from './Piece';
 import { preloadAllPieceModels } from './ModelLoader';
 
@@ -33,6 +34,18 @@ function Pieces() {
     <>
       {pieces.map((piece) => (
         <Piece key={piece.id} piece={piece} />
+      ))}
+    </>
+  );
+}
+
+function Ghosts() {
+  const ghosts = useGameStore((s) => s.capturedGhosts);
+  const removeGhost = useGameStore((s) => s.removeGhost);
+  return (
+    <>
+      {ghosts.map(({ ghostId, piece }) => (
+        <GhostPiece key={ghostId} piece={piece} onDone={() => removeGhost(ghostId)} />
       ))}
     </>
   );
@@ -65,6 +78,7 @@ export function Scene() {
         <Board />
         <Suspense fallback={null}>
           <Pieces />
+          <Ghosts />
         </Suspense>
         <CheckAura />
         <EffectsLayer />

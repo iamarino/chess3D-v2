@@ -4,12 +4,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useAnimations, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
-import { SkeletonUtils } from 'three-stdlib';
 import type { ChessPiece } from '@/core/chess/types';
 import { useGameStore } from '@/store/useGameStore';
 import { DEFAULT_PIECE_MODEL_OFFSET, useSettingsStore } from '@/store/useSettingsStore';
 import { heroesVillainsTheme } from '@/themes/heroes-villains/theme';
-import { getModelConfig, type PieceModelConfig } from './ModelLoader';
+import { cloneSkinnedScene, getModelConfig, type PieceModelConfig } from './ModelLoader';
 import { squareToPosition } from './boardUtils';
 import { createWalkMotion, planWalk, rampedProgress, type WalkMotion, type WalkPlan } from './walkMotion';
 
@@ -62,16 +61,28 @@ function useWalkMotion(config: PieceModelConfig): WalkMotion | null {
  */
 type PhaseRef = { current: number | null };
 
+/**
+ * 'attack' é um pedido de um-tiro: `Piece` escreve 'attack' assim que a
+ * caminhada termina num lance de captura; `PieceModel` consome — toca o
+ * clipe e devolve para 'idle' sozinho quando ele acaba (evento `finished` do
+ * mixer). Ao contrário da fase da caminhada, aqui não há posição para
+ * sincronizar: o golpe toca com o próprio root motion do clipe, em espaço
+ * local, porque a peça já está parada no centro da casa quando ele começa.
+ */
+type ActionRef = { current: 'idle' | 'attack' };
+
 function PieceModel({
   color,
   type,
   motion,
   phaseRef,
+  actionRef,
 }: {
   color: ChessPiece['color'];
   type: ChessPiece['type'];
   motion: WalkMotion | null;
   phaseRef: PhaseRef;
+  actionRef: ActionRef;
 }) {
   const config = getModelConfig(color, type);
   const { scene, animations } = useGLTF(config.path);
@@ -80,22 +91,7 @@ function PieceModel({
   // configurações para o painel "Ajuste de posição" refletir na hora.
   const modelOffset = useSettingsStore((s) => s.pieceModelOffsets[`${color}-${type}`] ?? DEFAULT_PIECE_MODEL_OFFSET);
 
-  // Cenas GLTF são compartilhadas por URL — clonar por instância evita montar
-  // o mesmo Object3D sob vários pais (oito peões, um pawn.glb). `clone(true)`
-  // copia a hierarquia mas NÃO o esqueleto: cada SkinnedMesh clonado seguiria
-  // apontando para os ossos do original, e todas as instâncias do modelo com
-  // rig colapsariam sobre a que se moveu por último. SkeletonUtils.clone
-  // reconstrói um esqueleto por clone (e serve também para os modelos sem rig).
-  const cloned = useMemo(() => {
-    const clone = SkeletonUtils.clone(scene) as THREE.Object3D;
-    clone.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
-    return clone;
-  }, [scene]);
+  const cloned = useMemo(() => cloneSkinnedScene(scene), [scene]);
 
   // Troca o clipe de caminhada pela versão in-place: o avanço do osso raiz foi
   // extraído e agora é aplicado por `Piece` na posição do grupo.
@@ -105,10 +101,10 @@ function PieceModel({
   }, [animations, motion, config.walkClip]);
 
   // A maioria das peças é malha estática sem `animations` e este hook vira
-  // no-op. Modelos gerados com a ferramenta de animação da Tripo (hoje o peão
-  // herói) tocam o clipe de introdução uma vez ao aparecer e congelam na
+  // no-op. Modelos gerados com a ferramenta de animação da Tripo (hoje os
+  // peões) tocam o clipe de introdução uma vez ao aparecer e congelam na
   // última pose — é essa pose que serve de "parado" entre as jogadas.
-  const { actions, names } = useAnimations(clips, animationRoot);
+  const { actions, names, mixer } = useAnimations(clips, animationRoot);
 
   // O getter `actions[name]` da drei só cria (e memoriza) a AnimationAction
   // depois que `animationRoot.current` existe, o que não vale ainda na
@@ -116,6 +112,7 @@ function PieceModel({
   // Buscar por nome dentro de efeitos/useFrame pega a action de verdade.
   const introClipName = names.length > 0 ? (config.introClip && names.includes(config.introClip) ? config.introClip : names[0]) : null;
   const walkClipName = config.walkClip && names.includes(config.walkClip) ? config.walkClip : null;
+  const attackClipName = config.attackClip && names.includes(config.attackClip) ? config.attackClip : null;
 
   useEffect(() => {
     if (!introClipName) return;
@@ -129,40 +126,80 @@ function PieceModel({
     };
   }, [actions, introClipName]);
 
+  useEffect(() => {
+    if (!attackClipName) return;
+    const action = actions[attackClipName];
+    if (!action) return;
+    action.setLoop(THREE.LoopOnce, 1);
+    action.clampWhenFinished = true;
+  }, [actions, attackClipName]);
+
+  // Devolve `actionRef` para 'idle' sozinho quando o golpe termina — `Piece`
+  // só precisa saber pedir o golpe, não acompanhar quando ele acaba.
+  useEffect(() => {
+    if (!attackClipName) return;
+    const action = actions[attackClipName];
+    if (!action) return;
+    const onFinished = (event: { action: THREE.AnimationAction }) => {
+      if (event.action === action && actionRef.current === 'attack') actionRef.current = 'idle';
+    };
+    mixer.addEventListener('finished', onFinished);
+    return () => mixer.removeEventListener('finished', onFinished);
+  }, [actions, attackClipName, mixer, actionRef]);
+
   const walkStartedRef = useRef(false);
+  const attackStartedRef = useRef(false);
 
   useFrame((_, delta) => {
-    if (!walkClipName || !motion) return;
-    const walkAction = actions[walkClipName];
-    const introAction = introClipName ? actions[introClipName] : undefined;
-    if (!walkAction) return;
+    const walking = phaseRef.current !== null;
+    const attacking = actionRef.current === 'attack';
 
-    const phase = phaseRef.current;
-    const walking = phase !== null;
-
-    if (walking) {
-      if (!walkStartedRef.current) {
-        walkAction.reset().play();
-        walkStartedRef.current = true;
+    if (walkClipName && motion) {
+      const walkAction = actions[walkClipName];
+      if (walkAction) {
+        if (walking) {
+          if (!walkStartedRef.current) {
+            walkAction.reset().play();
+            walkStartedRef.current = true;
+          }
+          // A fase é ditada pela locomoção, não pelo relógio do mixer: com a
+          // action pausada o mixer avalia o clipe exatamente em `time`. É o
+          // que garante que a pose corresponda ao ponto do trajeto, quadro a
+          // quadro, e que a caminhada termine no footfall planejado em vez de
+          // onde o tempo cair.
+          walkAction.paused = true;
+          walkAction.time = phaseRef.current! % motion.duration;
+        } else if (walkStartedRef.current && walkAction.weight < 0.01) {
+          walkAction.stop();
+          walkStartedRef.current = false;
+        }
+        walkAction.weight = THREE.MathUtils.damp(walkAction.weight, walking ? 1 : 0, BLEND_LAMBDA, delta);
       }
-      // A fase é ditada pela locomoção, não pelo relógio do mixer: com a action
-      // pausada o mixer avalia o clipe exatamente em `time`. É o que garante
-      // que a pose corresponda ao ponto do trajeto, quadro a quadro, e que a
-      // caminhada termine no footfall planejado em vez de onde o tempo cair.
-      walkAction.paused = true;
-      walkAction.time = phase % motion.duration;
-    } else if (walkStartedRef.current && walkAction.weight < 0.01) {
-      walkAction.stop();
-      walkStartedRef.current = false;
     }
 
-    // Crossfade por peso. Ao chegar, a peça volta para a mesma pose parada dos
-    // peões que ainda não jogaram — antes ela congelava na pose de caminhada e
-    // cada peão acabava parado num meio-passo diferente.
-    const target = walking ? 1 : 0;
-    walkAction.weight = THREE.MathUtils.damp(walkAction.weight, target, BLEND_LAMBDA, delta);
-    if (introAction) {
-      introAction.weight = THREE.MathUtils.damp(introAction.weight, 1 - target, BLEND_LAMBDA, delta);
+    if (attackClipName) {
+      const attackAction = actions[attackClipName];
+      if (attackAction) {
+        if (attacking && !attackStartedRef.current) {
+          attackAction.reset().play();
+          attackStartedRef.current = true;
+        } else if (!attacking) {
+          attackStartedRef.current = false;
+        }
+        attackAction.weight = THREE.MathUtils.damp(attackAction.weight, attacking ? 1 : 0, BLEND_LAMBDA, delta);
+      }
+    }
+
+    // Crossfade por peso. Parado (nem andando, nem golpeando) volta sempre
+    // para a mesma pose de descanso dos peões que ainda não jogaram — antes
+    // ela congelava na pose de caminhada e cada peão acabava parado num
+    // meio-passo diferente.
+    if (introClipName) {
+      const introAction = actions[introClipName];
+      if (introAction) {
+        const idleTarget = walking || attacking ? 0 : 1;
+        introAction.weight = THREE.MathUtils.damp(introAction.weight, idleTarget, BLEND_LAMBDA, delta);
+      }
     }
   });
 
@@ -214,6 +251,24 @@ export function Piece({ piece }: PieceProps) {
   const walkRef = useRef<WalkState | null>(null);
   const glideRef = useRef<GlideState | null>(null);
   const phaseRef = useRef<number | null>(null);
+  const actionRef = useRef<'idle' | 'attack'>('idle');
+
+  // Casa de destino de uma captura com golpe, enquanto a peça ainda não
+  // começou a andar até lá — não nulo do instante em que o golpe começa até
+  // a caminhada de fato começar (golpe terminado e, se o adversário tiver
+  // queda, queda também terminada). Ver `useFrame` abaixo.
+  const captureTargetRef = useRef<THREE.Vector3 | null>(null);
+  // Direção do golpe (e da caminhada que vem depois), calculada uma vez no
+  // instante da captura — mantém a peça virada para o adversário durante
+  // todo o golpe, não só durante a caminhada.
+  const captureYawRef = useRef(0);
+  // Id da peça capturada, para saber (via `capturedGhosts` do store) quando
+  // a queda dela terminou.
+  const captureDefenderIdRef = useRef<string | null>(null);
+  // true enquanto o golpe ainda está tocando: assim que `actionRef` volta a
+  // 'idle', o fantasma da peça capturada é liberado (`releasePendingGhost`)
+  // para começar a cair.
+  const kickPendingReleaseRef = useRef(false);
 
   // Guarda a última casa em vez de um booleano de "montado": em dev o Strict
   // Mode reexecuta este efeito logo após montar, e uma flag já leria "montado"
@@ -231,26 +286,18 @@ export function Piece({ piece }: PieceProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    const previousSquare = lastSquareRef.current;
-    lastSquareRef.current = piece.square;
+  // Começa o trajeto (caminhada por root motion ou deslize) de `from` até
+  // `target`. Usado tanto pela jogada normal (efeito abaixo) quanto pela
+  // continuação de uma captura com golpe, uma vez que o golpe — e a queda do
+  // adversário, se houver — já terminaram (`useFrame` abaixo).
+  function beginTravel(from: THREE.Vector3, target: THREE.Vector3) {
     const group = groupRef.current;
-    if (!group || previousSquare === null || previousSquare === piece.square) return;
+    if (!group) return;
 
-    const target = new THREE.Vector3(...squareToPosition(piece.square));
-    // Só a peça que acabou de jogar caminha. Sem isso um "reiniciar" ou
-    // "desfazer" — que reposiciona várias peças de uma vez — faria o tabuleiro
-    // inteiro sair andando.
-    const lastMove = useGameStore.getState().lastMove;
-    const isPlayedMove = lastMove?.to === piece.square && lastMove?.from === previousSquare;
-
-    // Parte de onde a peça realmente está, não do alvo anterior, para uma
-    // jogada que chega no meio de outra animação não dar salto.
-    const from = group.position.clone();
     const direction = target.clone().sub(from);
     const distance = direction.length();
 
-    if (!isPlayedMove || distance < 1e-4) {
+    if (distance < 1e-4) {
       group.position.copy(target);
       walkRef.current = null;
       glideRef.current = null;
@@ -258,6 +305,11 @@ export function Piece({ piece }: PieceProps) {
       return;
     }
 
+    // A frente do modelo é o +Z da cena girado pela rotação de correção do
+    // config; o grupo gira o quanto falta para essa frente apontar para o
+    // destino. Para o peão herói andando reto isso dá 0, que é exatamente como
+    // ele já ficava — a virada só aparece nas capturas na diagonal.
+    const yaw = Math.atan2(direction.x, direction.z) - config.rotation[1];
     direction.normalize();
 
     if (!motion || !pieceWalkAnimation) {
@@ -268,12 +320,6 @@ export function Piece({ piece }: PieceProps) {
     }
 
     const plan = planWalk(motion, distance);
-    // A frente do modelo é o +Z da cena girado pela rotação de correção do
-    // config; o grupo gira o quanto falta para essa frente apontar para o
-    // destino. Para o peão herói andando reto isso dá 0, que é exatamente como
-    // ele já ficava — a virada só aparece nas capturas na diagonal.
-    const yaw = Math.atan2(direction.x, direction.z) - config.rotation[1];
-
     glideRef.current = null;
     walkRef.current = {
       from,
@@ -285,11 +331,86 @@ export function Piece({ piece }: PieceProps) {
       yaw,
     };
     phaseRef.current = plan.startPhase;
-  }, [piece.square, motion, pieceWalkAnimation, pieceWalkTempo, config.rotation]);
+  }
+
+  useEffect(() => {
+    const previousSquare = lastSquareRef.current;
+    lastSquareRef.current = piece.square;
+    const group = groupRef.current;
+    if (!group || previousSquare === null || previousSquare === piece.square) return;
+
+    const target = new THREE.Vector3(...squareToPosition(piece.square));
+    // Só a peça que acabou de jogar caminha. Sem isso um "reiniciar" ou
+    // "desfazer" — que reposiciona várias peças de uma vez — faria o tabuleiro
+    // inteiro sair andando.
+    const { lastMove, lastCapture } = useGameStore.getState();
+    const isPlayedMove = lastMove?.to === piece.square && lastMove?.from === previousSquare;
+
+    // Parte de onde a peça realmente está, não do alvo anterior, para uma
+    // jogada que chega no meio de outra animação não dar salto.
+    const from = group.position.clone();
+
+    if (!isPlayedMove || from.distanceTo(target) < 1e-4) {
+      group.position.copy(target);
+      walkRef.current = null;
+      glideRef.current = null;
+      phaseRef.current = null;
+      captureTargetRef.current = null;
+      captureDefenderIdRef.current = null;
+      return;
+    }
+
+    if (lastCapture?.attackerId === piece.id && config.attackClip) {
+      // Esta peça capturou: o golpe acontece primeiro, parada na casa de
+      // origem, virada para o adversário. A caminhada só começa depois que o
+      // golpe termina — e, se o adversário tiver queda, só depois que a queda
+      // também termina (ver `useFrame` abaixo, que faz esse acompanhamento).
+      const direction = target.clone().sub(from);
+      captureYawRef.current = Math.atan2(direction.x, direction.z) - config.rotation[1];
+      captureTargetRef.current = target;
+      captureDefenderIdRef.current = lastCapture.defenderId;
+      kickPendingReleaseRef.current = true;
+      walkRef.current = null;
+      glideRef.current = null;
+      phaseRef.current = null;
+      actionRef.current = 'attack';
+      return;
+    }
+
+    captureTargetRef.current = null;
+    captureDefenderIdRef.current = null;
+    beginTravel(from, target);
+    // beginTravel não é memoizada, mas fecha sobre os mesmos valores já
+    // listados abaixo — incluí-la só faria o efeito rodar de novo a cada
+    // render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [piece.square, piece.id, motion, pieceWalkAnimation, pieceWalkTempo, config.rotation, config.attackClip]);
 
   useFrame((_, delta) => {
     const group = groupRef.current;
     if (!group) return;
+
+    // Captura com golpe em andamento: primeiro espera o golpe terminar (e aí
+    // libera a queda do adversário), depois espera a queda sumir da cena, só
+    // então começa a andar até a casa de destino.
+    if (captureTargetRef.current) {
+      if (kickPendingReleaseRef.current) {
+        if (actionRef.current === 'idle') {
+          useGameStore.getState().releasePendingGhost();
+          kickPendingReleaseRef.current = false;
+        }
+      } else {
+        const defenderId = captureDefenderIdRef.current;
+        const stillFalling =
+          defenderId !== null &&
+          useGameStore.getState().capturedGhosts.some((ghost) => ghost.piece.id === defenderId);
+        if (!stillFalling) {
+          beginTravel(group.position.clone(), captureTargetRef.current);
+          captureTargetRef.current = null;
+          captureDefenderIdRef.current = null;
+        }
+      }
+    }
 
     const walk = walkRef.current;
     if (walk && motion) {
@@ -323,7 +444,9 @@ export function Piece({ piece }: PieceProps) {
       }
     }
 
-    const targetYaw = walk ? walk.yaw : 0;
+    // Durante o golpe (ainda parada, antes de andar) a peça já fica virada
+    // para o adversário, com a mesma direção que a caminhada vai usar depois.
+    const targetYaw = walk ? walk.yaw : captureTargetRef.current ? captureYawRef.current : 0;
     group.rotation.y = dampAngle(group.rotation.y, targetYaw, TURN_LAMBDA, delta);
 
     const targetScale = isSelected ? 1.08 : 1;
@@ -340,7 +463,7 @@ export function Piece({ piece }: PieceProps) {
         select(piece.square);
       }}
     >
-      <PieceModel color={piece.color} type={piece.type} motion={motion} phaseRef={phaseRef} />
+      <PieceModel color={piece.color} type={piece.type} motion={motion} phaseRef={phaseRef} actionRef={actionRef} />
       {isSelected && (
         <pointLight position={[0, 1.6, 0]} intensity={0.8} color={visual.accentColor} distance={2.8} />
       )}
