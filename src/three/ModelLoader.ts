@@ -162,7 +162,7 @@ export const MODEL_CONFIGS: Record<PieceColor, Record<PieceType, PieceModelConfi
     // (`RUN_DISTANCE_THRESHOLD` em `Piece.tsx`) a torre troca para a corrida.
     rook: {
       path: '/models/villain_rook.glb',
-      scale: 1.43,
+      scale: 1.58,
       rotation: [0, 0, 0],
       introClip: 'NlaTrack.002',
       walkClip: 'NlaTrack',
@@ -207,6 +207,137 @@ export function getModelConfig(color: PieceColor, type: PieceType): PieceModelCo
   return MODEL_CONFIGS[color][type];
 }
 
+const GLOW_COLOR = new THREE.Color(0xff2a1a);
+// Intensidade de pico do pulsar — ver `RedGlowPulse`, que anima entre
+// GLOW_PULSE_MIN e este valor. Exportado pra os dois ficarem sincronizados.
+export const GLOW_INTENSITY = 2.4;
+// Resolução do canvas usado pra amostrar a textura de cor base e gerar a
+// máscara — não precisa da resolução cheia (2048) pra pegar gemas/detalhes
+// pequenos, e mantém o custo (rodado uma única vez por material) baixo.
+const GLOW_MASK_RESOLUTION = 1024;
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let h = 0;
+  let s = 0;
+  const d = max - min;
+  if (d !== 0) {
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r:
+        h = (g - b) / d + (g < b ? 6 : 0);
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      default:
+        h = (r - g) / d + 4;
+    }
+    h *= 60;
+  }
+  return [h, s, l];
+}
+
+/**
+ * Vermelho vivo (gemas, joias, detalhes vilanescos) — não pega couro, pele ou
+ * madeira, que também tendem pro avermelhado mas são bem menos saturados e/ou
+ * mais escuros. Calibrado amostrando as texturas reais dos modelos: nenhuma
+ * peça herói tem vermelho nesse critério; entre as vilãs, peão e torre têm
+ * gemas vermelhas (só elas acendem), o rei vilão não tem nenhum pixel assim.
+ */
+function isGlowingRed(r: number, g: number, b: number): boolean {
+  const [h, s, l] = rgbToHsl(r, g, b);
+  return (h < 18 || h > 342) && s > 0.55 && l > 0.22 && l < 0.62;
+}
+
+/**
+ * Máscara preto-e-branco (mesmo UV da baseColorTexture) só com os pixels de
+ * vermelho vivo — vira o emissiveMap que acende só esses detalhes, sem
+ * clarear o resto da textura. `null` quando o material não tem nenhum pixel
+ * assim (a maioria — só gemas/joias vilanescas passam no critério).
+ */
+function buildRedGlowMask(source: THREE.Texture): THREE.CanvasTexture | null {
+  const image = source.image as CanvasImageSource | undefined;
+  if (!image) return null;
+
+  const size = GLOW_MASK_RESOLUTION;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(image, 0, 0, size, size);
+  const sample = ctx.getImageData(0, 0, size, size);
+
+  const mask = ctx.createImageData(size, size);
+  let hasGlow = false;
+  for (let i = 0; i < sample.data.length; i += 4) {
+    const glow = isGlowingRed(sample.data[i], sample.data[i + 1], sample.data[i + 2]);
+    hasGlow ||= glow;
+    const v = glow ? 255 : 0;
+    mask.data[i] = v;
+    mask.data[i + 1] = v;
+    mask.data[i + 2] = v;
+    mask.data[i + 3] = 255;
+  }
+  if (!hasGlow) return null;
+
+  ctx.putImageData(mask, 0, 0);
+  const maskTexture = new THREE.CanvasTexture(canvas);
+  maskTexture.wrapS = source.wrapS;
+  maskTexture.wrapT = source.wrapT;
+  maskTexture.flipY = source.flipY;
+  maskTexture.colorSpace = THREE.SRGBColorSpace;
+  return maskTexture;
+}
+
+// Materiais GLTF são compartilhados por referência entre todas as instâncias
+// clonadas do mesmo modelo (clone() não clona material) — processar uma vez
+// por material (não por peça) evita refazer a leitura de pixels a cada peão.
+const glowProcessedMaterials = new WeakSet<THREE.Material>();
+
+/**
+ * Todo material que recebeu o brilho vermelho, pra `RedGlowPulse` animar a
+ * intensidade de todos de uma vez só (um único `useFrame`, não um por peça) —
+ * ver `src/three/effects/RedGlowPulse.tsx`.
+ */
+export const glowMaterials = new Set<THREE.MeshStandardMaterial>();
+
+/**
+ * Acende os detalhes vermelho-vivo de um material como se tivessem luz
+ * própria: em material texturizado, gera um emissiveMap a partir da própria
+ * baseColorTexture (só as gemas acendem); em material de cor plana (o set
+ * procedural sem textura), acende o material inteiro se a cor dele já for um
+ * vermelho vivo — nenhuma peça herói ou vilã sem gema cai nesse caso hoje.
+ */
+function applyRedGlow(material: THREE.Material): void {
+  if (glowProcessedMaterials.has(material)) return;
+  glowProcessedMaterials.add(material);
+  if (!(material instanceof THREE.MeshStandardMaterial)) return;
+
+  if (material.map) {
+    const mask = buildRedGlowMask(material.map);
+    if (!mask) return;
+    material.emissiveMap = mask;
+    material.emissive = GLOW_COLOR;
+    material.emissiveIntensity = GLOW_INTENSITY;
+    material.needsUpdate = true;
+    glowMaterials.add(material);
+    return;
+  }
+
+  if (isGlowingRed(material.color.r * 255, material.color.g * 255, material.color.b * 255)) {
+    material.emissive = material.color.clone();
+    material.emissiveIntensity = GLOW_INTENSITY;
+    material.needsUpdate = true;
+    glowMaterials.add(material);
+  }
+}
+
 /**
  * Cenas GLTF são compartilhadas por URL — clonar por instância evita montar o
  * mesmo Object3D sob vários pais (oito peões, um pawn.glb). `clone(true)`
@@ -221,6 +352,8 @@ export function cloneSkinnedScene(scene: THREE.Object3D): THREE.Object3D {
     if (child instanceof THREE.Mesh) {
       child.castShadow = true;
       child.receiveShadow = true;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach(applyRedGlow);
     }
   });
   return clone;

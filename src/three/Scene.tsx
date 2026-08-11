@@ -14,6 +14,7 @@ import { CalibrationRuler, FileWalkRuler } from './CalibrationRuler';
 import { CameraDirector } from './CameraDirector';
 import { CheckAura } from './effects/CheckAura';
 import { EffectsLayer } from './effects/EffectsLayer';
+import { RedGlowPulse } from './effects/RedGlowPulse';
 import { Environment } from './Environment';
 import { GhostPiece } from './GhostPiece';
 import { Piece } from './Piece';
@@ -82,6 +83,7 @@ export function Scene() {
         </Suspense>
         <CheckAura />
         <EffectsLayer />
+        <RedGlowPulse />
         {showCalibrationRuler && (
           <>
             <CalibrationRuler />
