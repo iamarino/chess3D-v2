@@ -1,0 +1,19 @@
+services:
+
+  app:
+    container_name: ${APP_NAME}-app
+    image: ${APP_NAME}-app:latest
+    build:
+      context: .
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    networks:
+      - juno-network
+
+
+networks:
+  juno-network:
+    external: true
