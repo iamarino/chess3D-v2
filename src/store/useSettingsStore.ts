@@ -22,6 +22,7 @@ interface SettingsState {
   effectsVolume: number;
   muted: boolean;
   boardScheme: string;
+  discoFloor: boolean;
   showLegalMoves: boolean;
   pieceWalkAnimation: boolean;
   /**
@@ -48,6 +49,7 @@ interface SettingsState {
   setEffectsVolume: (volume: number) => void;
   setMuted: (muted: boolean) => void;
   setBoardScheme: (schemeId: string) => void;
+  setDiscoFloor: (enabled: boolean) => void;
   setShowLegalMoves: (show: boolean) => void;
   setPieceWalkAnimation: (enabled: boolean) => void;
   setPieceWalkTempo: (tempo: number) => void;
@@ -64,6 +66,7 @@ export const useSettingsStore = create<SettingsState>()(
       effectsVolume: 0.6,
       muted: false,
       boardScheme: DEFAULT_BOARD_SCHEME_ID,
+      discoFloor: false,
       showLegalMoves: true,
       pieceWalkAnimation: true,
       pieceWalkTempo: 1.15,
@@ -78,6 +81,7 @@ export const useSettingsStore = create<SettingsState>()(
       setEffectsVolume: (effectsVolume) => set({ effectsVolume }),
       setMuted: (muted) => set({ muted }),
       setBoardScheme: (boardScheme) => set({ boardScheme }),
+      setDiscoFloor: (discoFloor) => set({ discoFloor }),
       setShowLegalMoves: (showLegalMoves) => set({ showLegalMoves }),
       setPieceWalkAnimation: (pieceWalkAnimation) => set({ pieceWalkAnimation }),
       setPieceWalkTempo: (pieceWalkTempo) => set({ pieceWalkTempo }),

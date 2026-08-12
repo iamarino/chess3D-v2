@@ -58,6 +58,26 @@ export interface PieceModelConfig {
    */
   attackClip?: string;
   /**
+   * Ângulo (radianos) entre a FRENTE do modelo e a direção em que o golpe de
+   * `attackClip` de fato aterrissa — nem todo golpe sai para a frente. Medido
+   * no plano XZ com a mesma convenção de yaw do resto do código
+   * (`atan2(x, z)`), então é positivo para a esquerda do modelo (+X é o lado
+   * esquerdo do rig: os ossos `L_*` ficam em +X e os `R_*` em -X).
+   *
+   * `Piece.tsx` vira a peça para `direção do alvo - attackYaw` antes de
+   * disparar o golpe, de modo que quem chega no adversário é o pé/a mão, não a
+   * frente do modelo. Sem isso um golpe lateral acerta a casa errada: o peão
+   * vilão dá um chute que cruza para a esquerda dele, então mirando a frente no
+   * adversário o pé caía ~80° à esquerda do alvo — com o inimigo na diagonal
+   * direita, o chute terminava exatamente na casa da diagonal esquerda.
+   *
+   * Medido pelo alcance máximo do osso do golpe em relação ao quadril, no plano
+   * XZ (mesma técnica de `scripts/analisar-caminhada.mjs`). Deixe sem definir
+   * (= 0) para golpes que já saem para a frente, como os socos das duas torres
+   * (mãos a ~7-10° da frente, conferido).
+   */
+  attackYaw?: number;
+  /**
    * Clipe tocado uma vez, no lugar, quando esta peça acaba de ser capturada.
    * Se quem capturou tem `attackClip`, só começa a tocar depois que o golpe
    * termina; senão, toca imediatamente quando a captura é resolvida — ver
@@ -83,7 +103,51 @@ export const MODEL_CONFIGS: Record<PieceColor, Record<PieceType, PieceModelConfi
     // facing away from the board's home side, so it's spun 180° to face the camera.
     king: { path: '/models/hero_king.glb', scale: 1.32, rotation: [0, Math.PI, 0] },
     queen: trimeshConfig('/models/hero_queen.glb'),
-    rook: trimeshConfig('/models/hero_rook.glb'),
+    // Tripo-generated com rig + 5 clipes. Exportados como "concordar",
+    // "boxe_01", "dança_02", "correr" e "caminhar", mas gravados no .glb como
+    // NlaTrack genéricos — mapeados por amplitude/duração do root motion no
+    // osso Hip (`scripts/analisar-caminhada.mjs`), já que a ordem de
+    // exportação não é preservada 1:1 no glTF:
+    //
+    //   [0] NlaTrack      amp=1.490 dur=1.000s  — correr    (runClip)
+    //   [1] NlaTrack.001  amp=0.146 dur=2.250s  — boxe_01   (attackClip, a
+    //       pedido — troca o golpe padrão por um soco)
+    //   [2] NlaTrack.002  amp=0.171 dur=12.833s — dança_02  (não usado)
+    //   [3] NlaTrack.003  amp=0.751 dur=1.833s  — caminhar  (walkClip)
+    //   [4] NlaTrack.004  amp=0.015 dur=4.042s  — concordar (introClip, a
+    //       pedido — idle da torre herói é o aceno de concordância)
+    //
+    // Só [0] e [3] têm root motion de verdade (os dois "prováveis de
+    // caminhada" apontados pelo script) — batem exatamente com as duas únicas
+    // animações de locomoção da exportação (correr/caminhar), o que confirma
+    // o mapeamento por eliminação. Sem hitClip: o asset não tem uma animação
+    // de queda para esta peça — ao ser capturada ela some da cena sem clipe
+    // de queda (mesmo mecanismo genérico de GhostPiece.tsx, só que sem pose
+    // de queda antes de sumir).
+    //
+    // Export original: 883k triângulos / 38 MB; decimado com `gltf-transform
+    // simplify --ratio 0.025 --error 0.001` (preserva esqueleto/skinning/
+    // animações, mesma receita da torre vilã) para 22k triângulos / 4,2 MB.
+    //
+    // walkClip/runClip, mesma receita da torre vilã (docs/animacao-de-pecas.md):
+    // `NlaTrack.003` anda (passada 0.389 un./passo, 1 casa em 3 passos, 16.6%
+    // de correção — na mesma faixa aceita pela torre vilã, 17.7%, o asset não
+    // tem uma passada melhor disponível). `NlaTrack` corre (passada 1.028
+    // un./passo, quase 1 passo por casa, 2.8% de correção). A partir de
+    // `RUN_DISTANCE_THRESHOLD` casas a torre troca para a corrida.
+    rook: {
+      path: '/models/hero_rook.glb',
+      scale: 2.07,
+      // Autorado de costas para o tabuleiro (ao contrário do resto do time
+      // herói) — girada 180° para olhar para o centro, como as demais peças.
+      rotation: [0, Math.PI, 0],
+      introClip: 'NlaTrack.004',
+      attackClip: 'NlaTrack.001',
+      walkClip: 'NlaTrack.003',
+      walkFootfalls: [0.29, 0.74, 1.2, 1.66],
+      runClip: 'NlaTrack',
+      runFootfalls: [0.25, 0.5, 0.75],
+    },
     bishop: trimeshConfig('/models/hero_bishop.glb'),
     knight: trimeshConfig('/models/hero_knight.glb'),
     // Tripo-generated with a rig + 8 baked animation clips (Tripo's Animation tool),
@@ -198,6 +262,11 @@ export const MODEL_CONFIGS: Record<PieceColor, Record<PieceType, PieceModelConfi
       // para 3, com 6.2% de correção de passada.
       walkFootfalls: [0.25, 0.73, 1.2, 1.66],
       attackClip: 'NlaTrack.002',
+      // O chute é um giro de perna direita que cruza para a ESQUERDA do peão,
+      // não um chute frontal: no instante de impacto (t=0.667s, alcance máximo
+      // do R_ToeBase no plano XZ) o pé está em x=+0.321 / z=+0.061 relativo ao
+      // quadril, ou seja 79° para a esquerda da frente. Ver `attackYaw`.
+      attackYaw: (79 * Math.PI) / 180,
       hitClip: 'NlaTrack.001',
     },
   },
@@ -207,8 +276,16 @@ export function getModelConfig(color: PieceColor, type: PieceType): PieceModelCo
   return MODEL_CONFIGS[color][type];
 }
 
-const GLOW_COLOR = new THREE.Color(0xff2a1a);
-// Intensidade de pico do pulsar — ver `RedGlowPulse`, que anima entre
+// Cor do brilho por time — vermelho nas gemas vilãs, azul-safira nas gemas de
+// vidro dos heróis (torre). A detecção (`isGlowing`) amostra a cor média dos
+// pixels de cristal na textura (~#79c9e2, um ciano claro), mas o emissive usa
+// um azul mais profundo e saturado no mesmo tom — o ciano claro ficava
+// "plástico"/neon demais para luz própria; o safira lê como pedra preciosa.
+const GLOW_COLOR: Record<PieceColor, THREE.Color> = {
+  hero: new THREE.Color(0x0673e0),
+  villain: new THREE.Color(0xff2a1a),
+};
+// Intensidade de pico do pulsar — ver `GlowPulse`, que anima entre
 // GLOW_PULSE_MIN e este valor. Exportado pra os dois ficarem sincronizados.
 export const GLOW_INTENSITY = 2.4;
 // Resolução do canvas usado pra amostrar a textura de cor base e gerar a
@@ -244,24 +321,32 @@ function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
 }
 
 /**
- * Vermelho vivo (gemas, joias, detalhes vilanescos) — não pega couro, pele ou
- * madeira, que também tendem pro avermelhado mas são bem menos saturados e/ou
- * mais escuros. Calibrado amostrando as texturas reais dos modelos: nenhuma
- * peça herói tem vermelho nesse critério; entre as vilãs, peão e torre têm
- * gemas vermelhas (só elas acendem), o rei vilão não tem nenhum pixel assim.
+ * Detecta os pixels que devem acender como luz própria, por time — critério
+ * calibrado amostrando as texturas reais dos modelos:
+ *
+ * - `villain`: vermelho vivo (gemas, joias, detalhes vilanescos) — não pega
+ *   couro, pele ou madeira, que também tendem pro avermelhado mas são bem
+ *   menos saturados e/ou mais escuros. Nenhuma peça herói tem vermelho nesse
+ *   critério; entre as vilãs, peão e torre têm gemas vermelhas (só elas
+ *   acendem), o rei vilão não tem nenhum pixel assim.
+ * - `hero`: azul-gelo claro (cristais/vidro) — não pega o azul-marinho da
+ *   armadura (bem mais escuro e menos saturado) nem o azul-royal do manto do
+ *   rei. Hoje só a torre tem esses cristais; rei e peão não têm nenhum pixel
+ *   assim.
  */
-function isGlowingRed(r: number, g: number, b: number): boolean {
+function isGlowing(color: PieceColor, r: number, g: number, b: number): boolean {
   const [h, s, l] = rgbToHsl(r, g, b);
-  return (h < 18 || h > 342) && s > 0.55 && l > 0.22 && l < 0.62;
+  if (color === 'villain') return (h < 18 || h > 342) && s > 0.55 && l > 0.22 && l < 0.62;
+  return h > 180 && h < 230 && s > 0.45 && l > 0.55;
 }
 
 /**
- * Máscara preto-e-branco (mesmo UV da baseColorTexture) só com os pixels de
- * vermelho vivo — vira o emissiveMap que acende só esses detalhes, sem
- * clarear o resto da textura. `null` quando o material não tem nenhum pixel
- * assim (a maioria — só gemas/joias vilanescas passam no critério).
+ * Máscara preto-e-branco (mesmo UV da baseColorTexture) só com os pixels que
+ * acendem para este time — vira o emissiveMap que acende só esses detalhes,
+ * sem clarear o resto da textura. `null` quando o material não tem nenhum
+ * pixel assim (a maioria — só gemas/joias/cristais passam no critério).
  */
-function buildRedGlowMask(source: THREE.Texture): THREE.CanvasTexture | null {
+function buildGlowMask(source: THREE.Texture, color: PieceColor): THREE.CanvasTexture | null {
   const image = source.image as CanvasImageSource | undefined;
   if (!image) return null;
 
@@ -276,7 +361,7 @@ function buildRedGlowMask(source: THREE.Texture): THREE.CanvasTexture | null {
   const mask = ctx.createImageData(size, size);
   let hasGlow = false;
   for (let i = 0; i < sample.data.length; i += 4) {
-    const glow = isGlowingRed(sample.data[i], sample.data[i + 1], sample.data[i + 2]);
+    const glow = isGlowing(color, sample.data[i], sample.data[i + 1], sample.data[i + 2]);
     hasGlow ||= glow;
     const v = glow ? 255 : 0;
     mask.data[i] = v;
@@ -301,36 +386,37 @@ function buildRedGlowMask(source: THREE.Texture): THREE.CanvasTexture | null {
 const glowProcessedMaterials = new WeakSet<THREE.Material>();
 
 /**
- * Todo material que recebeu o brilho vermelho, pra `RedGlowPulse` animar a
- * intensidade de todos de uma vez só (um único `useFrame`, não um por peça) —
- * ver `src/three/effects/RedGlowPulse.tsx`.
+ * Todo material que recebeu brilho (vermelho vilão ou azul herói), pra
+ * `GlowPulse` animar a intensidade de todos de uma vez só (um único
+ * `useFrame`, não um por peça) — ver `src/three/effects/GlowPulse.tsx`.
  */
 export const glowMaterials = new Set<THREE.MeshStandardMaterial>();
 
 /**
- * Acende os detalhes vermelho-vivo de um material como se tivessem luz
- * própria: em material texturizado, gera um emissiveMap a partir da própria
- * baseColorTexture (só as gemas acendem); em material de cor plana (o set
- * procedural sem textura), acende o material inteiro se a cor dele já for um
- * vermelho vivo — nenhuma peça herói ou vilã sem gema cai nesse caso hoje.
+ * Acende os detalhes vivos de um material como se tivessem luz própria: em
+ * material texturizado, gera um emissiveMap a partir da própria
+ * baseColorTexture (só as gemas/cristais acendem); em material de cor plana
+ * (o set procedural sem textura), acende o material inteiro se a cor dele já
+ * bater no critério do time — nenhuma peça sem gema/cristal cai nesse caso
+ * hoje.
  */
-function applyRedGlow(material: THREE.Material): void {
+function applyGlow(material: THREE.Material, color: PieceColor): void {
   if (glowProcessedMaterials.has(material)) return;
   glowProcessedMaterials.add(material);
   if (!(material instanceof THREE.MeshStandardMaterial)) return;
 
   if (material.map) {
-    const mask = buildRedGlowMask(material.map);
+    const mask = buildGlowMask(material.map, color);
     if (!mask) return;
     material.emissiveMap = mask;
-    material.emissive = GLOW_COLOR;
+    material.emissive = GLOW_COLOR[color];
     material.emissiveIntensity = GLOW_INTENSITY;
     material.needsUpdate = true;
     glowMaterials.add(material);
     return;
   }
 
-  if (isGlowingRed(material.color.r * 255, material.color.g * 255, material.color.b * 255)) {
+  if (isGlowing(color, material.color.r * 255, material.color.g * 255, material.color.b * 255)) {
     material.emissive = material.color.clone();
     material.emissiveIntensity = GLOW_INTENSITY;
     material.needsUpdate = true;
@@ -346,14 +432,14 @@ function applyRedGlow(material: THREE.Material): void {
  * rig colapsariam sobre a que se moveu por último. SkeletonUtils.clone
  * reconstrói um esqueleto por clone (e serve também para os modelos sem rig).
  */
-export function cloneSkinnedScene(scene: THREE.Object3D): THREE.Object3D {
+export function cloneSkinnedScene(scene: THREE.Object3D, color: PieceColor): THREE.Object3D {
   const clone = SkeletonUtils.clone(scene) as THREE.Object3D;
   clone.traverse((child) => {
     if (child instanceof THREE.Mesh) {
       child.castShadow = true;
       child.receiveShadow = true;
       const materials = Array.isArray(child.material) ? child.material : [child.material];
-      materials.forEach(applyRedGlow);
+      materials.forEach((material) => applyGlow(material, color));
     }
   });
   return clone;

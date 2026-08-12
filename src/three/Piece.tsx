@@ -26,6 +26,11 @@ const RUN_DISTANCE_THRESHOLD = 2;
 const BLEND_LAMBDA = 16;
 /** Velocidade com que a peça se vira para a direção do movimento. */
 const TURN_LAMBDA = 11;
+/**
+ * Erro de ângulo (radianos) abaixo do qual a peça já é considerada virada para
+ * o adversário e o golpe pode começar — ver `strikePhaseRef` em `Piece`.
+ */
+const STRIKE_ALIGNED_EPS = 0.04;
 /** Duração do deslize das peças sem clipe de caminhada (todas menos o peão herói). */
 const GLIDE_DURATION = 0.42;
 
@@ -150,7 +155,7 @@ function PieceModel({
   // configurações para o painel "Ajuste de posição" refletir na hora.
   const modelOffset = useSettingsStore((s) => s.pieceModelOffsets[`${color}-${type}`] ?? DEFAULT_PIECE_MODEL_OFFSET);
 
-  const cloned = useMemo(() => cloneSkinnedScene(scene), [scene]);
+  const cloned = useMemo(() => cloneSkinnedScene(scene, color), [scene, color]);
 
   // Troca o clipe de caminhada pela versão in-place: o avanço do osso raiz foi
   // extraído e agora é aplicado por `Piece` na posição do grupo.
@@ -268,6 +273,18 @@ function PieceModel({
         } else if (!attacking) {
           attackStartedRef.current = false;
         }
+        // Rede de segurança para o fim do golpe. O caminho normal é o evento
+        // 'finished' do mixer (efeito acima), mas se ele se perder — um
+        // re-registro do listener no meio do clipe, por exemplo — `actionRef`
+        // ficaria em 'attack' para sempre: a peça nunca andaria até a casa
+        // conquistada e ficaria parada na casa de origem, atrasada em relação à
+        // sua casa lógica. Com `clampWhenFinished` a action termina pausada no
+        // último quadro, então "parou de rodar com o tempo já andado" é o mesmo
+        // sinal, lido do estado em vez do evento. `time > 0` evita disparar no
+        // próprio quadro do `play()`, quando o tempo ainda é 0.
+        if (attacking && attackStartedRef.current && attackAction.time > 0 && !attackAction.isRunning()) {
+          actionRef.current = 'idle';
+        }
         attackAction.weight = THREE.MathUtils.damp(attackAction.weight, attacking ? 1 : 0, BLEND_LAMBDA, delta);
       }
     }
@@ -345,17 +362,34 @@ export function Piece({ piece }: PieceProps) {
   // a caminhada de fato começar (golpe terminado e, se o adversário tiver
   // queda, queda também terminada). Ver `useFrame` abaixo.
   const captureTargetRef = useRef<THREE.Vector3 | null>(null);
-  // Direção do golpe (e da caminhada que vem depois), calculada uma vez no
-  // instante da captura — mantém a peça virada para o adversário durante
-  // todo o golpe, não só durante a caminhada.
+  // Yaw em que a peça fica plantada durante o golpe, calculado uma vez no
+  // instante da captura. NÃO é a direção do adversário: é a direção que faz o
+  // golpe cair sobre ele (`direção do alvo - config.attackYaw`). Para um golpe
+  // frontal os dois coincidem; para um lateral, como o chute do peão vilão, a
+  // peça fica de lado para o adversário — que é justamente a pose de quem vai
+  // acertar um chute giratório.
   const captureYawRef = useRef(0);
+  /**
+   * Fase da captura com golpe, entre o lance e a caminhada até a casa:
+   *
+   *   'turning'  — parada, girando até `captureYawRef`; o golpe ainda não
+   *                começou. A virada vem ANTES do clipe justamente para o pé
+   *                sair já na direção certa: girar durante o golpe faria o
+   *                chute começar fora de eixo (o peso do clipe sobe com
+   *                BLEND_LAMBDA, mais rápido que o giro em TURN_LAMBDA).
+   *   'striking' — clipe do golpe tocando.
+   *   null       — sem golpe pendente; é a única fase em que a peça pode andar.
+   *
+   * É uma fase só, e não dois booleanos, porque `actionRef === 'idle'` é
+   * ambíguo: significa tanto "o golpe ainda não começou" quanto "o golpe
+   * acabou". Ler 'idle' como "acabou" durante a virada liberava a queda do
+   * adversário e mandava a peça andar antes do chute — ela chegava na casa do
+   * adversário e só então golpeava.
+   */
+  const strikePhaseRef = useRef<'turning' | 'striking' | null>(null);
   // Id da peça capturada, para saber (via `capturedGhosts` do store) quando
   // a queda dela terminou.
   const captureDefenderIdRef = useRef<string | null>(null);
-  // true enquanto o golpe ainda está tocando: assim que `actionRef` volta a
-  // 'idle', o fantasma da peça capturada é liberado (`releasePendingGhost`)
-  // para começar a cair.
-  const kickPendingReleaseRef = useRef(false);
   // Captura a mais de 1 casa de distância (torre): o golpe só começa quando a
   // peça chega adjacente ao alvo — antes disso ela anda/corre normalmente até
   // lá. Guarda o destino real e o defensor para o golpe disparar assim que
@@ -458,8 +492,27 @@ export function Piece({ piece }: PieceProps) {
     const { lastMove, lastCapture } = useGameStore.getState();
     const isPlayedMove = lastMove?.to === piece.square && lastMove?.from === previousSquare;
 
-    // Parte de onde a peça realmente está, não do alvo anterior, para uma
-    // jogada que chega no meio de outra animação não dar salto.
+    // Auto-correção de posição. O normal é partir de onde a peça realmente
+    // está — uma jogada que chega no meio da animação anterior não deve dar
+    // salto. Mas se o modelo ficou LONGE da casa de origem, ele não está no
+    // meio de um tween: uma animação anterior não chegou ao fim e a peça ficou
+    // para trás. Nesse caso a casa lógica é a verdade e o modelo é reassentado
+    // nela antes de qualquer cálculo.
+    //
+    // Sem isto, a captura seguinte mede direção e distância a partir do lugar
+    // errado: era o que fazia o segundo golpe do peão sair da casa de origem e
+    // acontecer já em cima do adversário. Meia casa de tolerância separa os
+    // dois casos — um tween em andamento nunca passa disso, uma peça deixada
+    // para trás fica a uma casa inteira ou mais.
+    const previousPosition = new THREE.Vector3(...squareToPosition(previousSquare));
+    const correcao = group.position.distanceTo(previousPosition) > 0.5;
+    if (correcao) {
+      group.position.copy(previousPosition);
+      walkRef.current = null;
+      glideRef.current = null;
+      phaseRef.current = null;
+      locomotionRef.current = null;
+    }
     const from = group.position.clone();
 
     if (!isPlayedMove || from.distanceTo(target) < 1e-4) {
@@ -471,46 +524,70 @@ export function Piece({ piece }: PieceProps) {
       captureTargetRef.current = null;
       captureDefenderIdRef.current = null;
       pendingAttackRef.current = null;
+      strikePhaseRef.current = null;
       return;
     }
 
     if (lastCapture?.attackerId === piece.id && config.attackClip) {
       const direction = target.clone().sub(from);
-      const distanceSquares = Math.round(direction.length());
-      const yaw = Math.atan2(direction.x, direction.z) - config.rotation[1];
+      // Quantas CASAS o lance andou, contado no tabuleiro (distância de
+      // Chebyshev entre as casas), não pela distância até onde o modelo está
+      // renderizado. Medir pelo mundo faz uma captura de peão (1 passo na
+      // diagonal, √2 ≈ 1.41 unidades) virar "2 casas" assim que a peça estiver
+      // minimamente atrasada em relação à casa lógica — e aí ela cai no ramo de
+      // captura à distância, que anda primeiro e só golpeia no fim.
+      const distanceSquares = Math.max(
+        Math.abs(piece.square.charCodeAt(0) - previousSquare.charCodeAt(0)),
+        Math.abs(Number(piece.square[1]) - Number(previousSquare[1])),
+      );
+      // Yaw que coloca o GOLPE em cima do adversário: a frente do modelo aponta
+      // para o alvo menos o desvio do próprio golpe (`attackYaw`). Num golpe
+      // frontal o desvio é 0 e a peça encara o adversário como antes; no chute
+      // lateral do peão vilão ela se planta de lado, com o pé — não o rosto —
+      // apontado para a casa que vai ser capturada.
+      const strikeYaw =
+        Math.atan2(direction.x, direction.z) - config.rotation[1] - (config.attackYaw ?? 0);
 
       if (distanceSquares > 1) {
         // Captura à distância: anda/corre normalmente até ficar adjacente ao
         // alvo (uma casa antes) — o golpe só dispara quando essa aproximação
         // terminar, no bloco de chegada da caminhada em `useFrame`.
         const approach = target.clone().addScaledVector(direction.clone().normalize(), -1);
+        // Durante a aproximação não há golpe pendente: a fase só volta a
+        // 'turning' quando a caminhada chegar (bloco de `pendingAttackRef` em
+        // `useFrame`). Deixar uma fase antiga aqui faria a checagem de
+        // alinhamento disparar um golpe no meio do caminho.
+        strikePhaseRef.current = null;
         captureTargetRef.current = null;
         captureDefenderIdRef.current = null;
-        pendingAttackRef.current = { target, defenderId: lastCapture.defenderId, yaw };
+        pendingAttackRef.current = { target, defenderId: lastCapture.defenderId, yaw: strikeYaw };
         beginTravel(from, approach);
         return;
       }
 
-      // Já adjacente: o golpe acontece direto, parada na casa de origem,
-      // virada para o adversário. A caminhada (1 casa) só começa depois que o
-      // golpe termina — e, se o adversário tiver queda, só depois que a queda
-      // também termina (ver `useFrame` abaixo, que faz esse acompanhamento).
-      captureYawRef.current = yaw;
+      // Já adjacente: a peça para na casa de origem, gira até `strikeYaw` e só
+      // então bate (o disparo fica com `useFrame`, quando a virada terminar).
+      // A caminhada (1 casa) só começa depois que o golpe termina — e, se o
+      // adversário tiver queda, só depois que a queda também termina (ver
+      // `useFrame` abaixo, que faz esse acompanhamento).
+      captureYawRef.current = strikeYaw;
       captureTargetRef.current = target;
       captureDefenderIdRef.current = lastCapture.defenderId;
       pendingAttackRef.current = null;
-      kickPendingReleaseRef.current = true;
+      strikePhaseRef.current = 'turning';
       walkRef.current = null;
       glideRef.current = null;
       phaseRef.current = null;
       locomotionRef.current = null;
-      actionRef.current = 'attack';
       return;
     }
 
+    // Lance normal (sem golpe): zera também a fase, senão um golpe que ficou
+    // pela metade continuaria valendo no lance seguinte desta peça.
     captureTargetRef.current = null;
     captureDefenderIdRef.current = null;
     pendingAttackRef.current = null;
+    strikePhaseRef.current = null;
     beginTravel(from, target);
     // beginTravel não é memoizada, mas fecha sobre os mesmos valores já
     // listados abaixo — incluí-la só faria o efeito rodar de novo a cada
@@ -526,10 +603,15 @@ export function Piece({ piece }: PieceProps) {
     // libera a queda do adversário), depois espera a queda sumir da cena, só
     // então começa a andar até a casa de destino.
     if (captureTargetRef.current) {
-      if (kickPendingReleaseRef.current) {
+      if (strikePhaseRef.current === 'turning') {
+        // Parada, girando. Quem passa daqui para 'striking' é a checagem de
+        // alinhamento no fim deste mesmo useFrame.
+      } else if (strikePhaseRef.current === 'striking') {
+        // Só agora 'idle' quer dizer "o golpe acabou" — o clipe comprovadamente
+        // começou. Aí o adversário é liberado para cair.
         if (actionRef.current === 'idle') {
           useGameStore.getState().releasePendingGhost();
-          kickPendingReleaseRef.current = false;
+          strikePhaseRef.current = null;
         }
       } else {
         const defenderId = captureDefenderIdRef.current;
@@ -573,8 +655,7 @@ export function Piece({ piece }: PieceProps) {
           captureYawRef.current = pending.yaw;
           captureTargetRef.current = pending.target;
           captureDefenderIdRef.current = pending.defenderId;
-          kickPendingReleaseRef.current = true;
-          actionRef.current = 'attack';
+          strikePhaseRef.current = 'turning';
         }
       }
     } else {
@@ -590,10 +671,25 @@ export function Piece({ piece }: PieceProps) {
       }
     }
 
-    // Durante o golpe (ainda parada, antes de andar) a peça já fica virada
-    // para o adversário, com a mesma direção que a caminhada vai usar depois.
+    // Durante o golpe (ainda parada, antes de andar) a peça fica plantada no
+    // yaw que joga o golpe em cima do adversário — ver `captureYawRef`.
     const targetYaw = walk ? walk.yaw : captureTargetRef.current ? captureYawRef.current : 0;
     group.rotation.y = dampAngle(group.rotation.y, targetYaw, TURN_LAMBDA, delta);
+
+    // Virada terminada: agora sim o golpe. Como o giro é exponencial, ele nunca
+    // chega ao alvo exato — `STRIKE_ALIGNED_EPS` é o "perto o bastante" para o
+    // pé cair na casa certa (a 1 casa de distância, 0.04 rad dá menos de 5 cm
+    // de desvio).
+    if (strikePhaseRef.current === 'turning') {
+      let error = (captureYawRef.current - group.rotation.y) % (Math.PI * 2);
+      if (error > Math.PI) error -= Math.PI * 2;
+      if (error < -Math.PI) error += Math.PI * 2;
+      if (Math.abs(error) < STRIKE_ALIGNED_EPS) {
+        group.rotation.y = captureYawRef.current;
+        strikePhaseRef.current = 'striking';
+        actionRef.current = 'attack';
+      }
+    }
 
     const targetScale = isSelected ? 1.08 : 1;
     group.scale.setScalar(THREE.MathUtils.damp(group.scale.x, targetScale, 10, delta));

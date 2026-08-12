@@ -115,6 +115,8 @@ export function SettingsMenu() {
   const setEffectsVolume = useSettingsStore((s) => s.setEffectsVolume);
   const boardScheme = useSettingsStore((s) => s.boardScheme);
   const setBoardScheme = useSettingsStore((s) => s.setBoardScheme);
+  const discoFloor = useSettingsStore((s) => s.discoFloor);
+  const setDiscoFloor = useSettingsStore((s) => s.setDiscoFloor);
   const showLegalMoves = useSettingsStore((s) => s.showLegalMoves);
   const setShowLegalMoves = useSettingsStore((s) => s.setShowLegalMoves);
   const pieceWalkAnimation = useSettingsStore((s) => s.pieceWalkAnimation);
@@ -215,6 +217,26 @@ export function SettingsMenu() {
               </button>
             ))}
           </div>
+        </section>
+
+        <section className="mb-6">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-zinc-400">
+            Efeitos do tabuleiro
+          </h3>
+          <label className="flex items-center justify-between rounded-lg bg-white/5 px-3 py-2 text-sm">
+            <span>
+              Pista de dança
+              <span className="block text-xs text-zinc-500">
+                Casas piscam em cores, estilo pista de dança anos 70
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={discoFloor}
+              onChange={(event) => setDiscoFloor(event.target.checked)}
+              className="h-4 w-4 shrink-0"
+            />
+          </label>
         </section>
 
         <section className="mb-6">

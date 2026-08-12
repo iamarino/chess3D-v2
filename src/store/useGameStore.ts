@@ -82,15 +82,21 @@ export const useGameStore = create<GameStore>((set) => {
   });
 
   manager.events.on('piece-captured', ({ attacker, defender }) => {
-    // Só entra fantasma para peças com animação de queda — as demais somem
-    // no mesmo quadro, como sempre foi.
     const hasFallAnimation = !!getModelConfig(defender.color, defender.type).hitClip;
-    const ghost: CapturedGhost | null = hasFallAnimation
-      ? { ghostId: `${defender.id}-${Date.now()}`, piece: defender }
-      : null;
     // Quando quem capturou tem golpe, a queda espera o chute terminar — ver
     // `pendingGhost`. Sem golpe, cai no mesmo quadro da captura, como antes.
     const attackerHasKick = !!attacker && !!getModelConfig(attacker.color, attacker.type).attackClip;
+    // Fantasma para peças com animação de queda — e também para as sem queda
+    // quando quem captura tem golpe. Sem esse segundo caso o defensor sumiria
+    // no quadro do lance, ou seja antes do chute, e o golpe acertaria uma casa
+    // já vazia (era o que acontecia com o peão herói, que não tem `hitClip`).
+    // Sem `hitClip` o fantasma é só a peça de pé: `GhostPiece` não acha clipe
+    // de queda e se remove no ato — mas só depois de `releasePendingGhost`, ou
+    // seja no instante em que o chute conecta.
+    const ghost: CapturedGhost | null =
+      hasFallAnimation || attackerHasKick
+        ? { ghostId: `${defender.id}-${Date.now()}`, piece: defender }
+        : null;
 
     set((s) => ({
       lastCapture: { attackerId: attacker?.id ?? null, defenderId: defender.id },

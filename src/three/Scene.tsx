@@ -14,7 +14,7 @@ import { CalibrationRuler, FileWalkRuler } from './CalibrationRuler';
 import { CameraDirector } from './CameraDirector';
 import { CheckAura } from './effects/CheckAura';
 import { EffectsLayer } from './effects/EffectsLayer';
-import { RedGlowPulse } from './effects/RedGlowPulse';
+import { GlowPulse } from './effects/GlowPulse';
 import { Environment } from './Environment';
 import { GhostPiece } from './GhostPiece';
 import { Piece } from './Piece';
@@ -42,9 +42,17 @@ function Pieces() {
 
 function Ghosts() {
   const ghosts = useGameStore((s) => s.capturedGhosts);
+  const pendingGhost = useGameStore((s) => s.pendingGhost);
   const removeGhost = useGameStore((s) => s.removeGhost);
   return (
     <>
+      {/* Vítima de um golpe que ainda não conectou: continua de pé na casa até
+          o chute acertar (ver `standing` em GhostPiece). É outro slot da árvore
+          que o fantasma que cai, então ela remonta na troca — de propósito: a
+          queda tem que começar do zero no instante do impacto. */}
+      {pendingGhost && (
+        <GhostPiece key={pendingGhost.ghostId} piece={pendingGhost.piece} standing onDone={() => {}} />
+      )}
       {ghosts.map(({ ghostId, piece }) => (
         <GhostPiece key={ghostId} piece={piece} onDone={() => removeGhost(ghostId)} />
       ))}
@@ -83,7 +91,7 @@ export function Scene() {
         </Suspense>
         <CheckAura />
         <EffectsLayer />
-        <RedGlowPulse />
+        <GlowPulse />
         {showCalibrationRuler && (
           <>
             <CalibrationRuler />
