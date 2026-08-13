@@ -60,7 +60,7 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
-      quality: 'high',
+      quality: 'low',
       cinematicCamera: true,
       masterVolume: 0.8,
       effectsVolume: 0.6,

@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useRef } from 'react';
+import { Suspense, useEffect, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { ContactShadows, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -60,7 +60,18 @@ function Ghosts() {
   );
 }
 
-export function Scene() {
+// Só monta dentro do mesmo Suspense das peças, então o efeito só dispara na
+// comitada em que elas de fato entraram na cena — ao contrário do
+// gerenciador de carregamento do three (`useProgress`), que fecha assim que
+// os GLBs terminam de baixar, antes do Suspense comitar os componentes.
+function PiecesReadySignal({ onReady }: { onReady: () => void }) {
+  useEffect(() => {
+    onReady();
+  }, [onReady]);
+  return null;
+}
+
+export function Scene({ onPiecesReady }: { onPiecesReady: () => void }) {
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const quality = useSettingsStore((s) => s.quality);
   const showCalibrationRuler = useSettingsStore((s) => s.showCalibrationRuler);
@@ -88,6 +99,7 @@ export function Scene() {
         <Suspense fallback={null}>
           <Pieces />
           <Ghosts />
+          <PiecesReadySignal onReady={onPiecesReady} />
         </Suspense>
         <CheckAura />
         <EffectsLayer />

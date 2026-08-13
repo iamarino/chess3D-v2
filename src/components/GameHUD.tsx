@@ -4,29 +4,6 @@ import Image from 'next/image';
 import { useGameStore } from '@/store/useGameStore';
 import { useNetworkStore } from '@/store/useNetworkStore';
 
-function MoveHistory() {
-  const history = useGameStore((s) => s.state.history);
-
-  if (history.length === 0) return null;
-
-  const pairs: [string, string | undefined][] = [];
-  for (let i = 0; i < history.length; i += 2) {
-    pairs.push([history[i], history[i + 1]]);
-  }
-
-  return (
-    <div className="pointer-events-auto max-h-40 w-40 overflow-y-auto rounded-lg bg-white/5 p-2 text-xs backdrop-blur">
-      {pairs.map(([heroMove, villainMove], i) => (
-        <div key={i} className="flex justify-between gap-2 text-zinc-300">
-          <span className="text-zinc-500">{i + 1}.</span>
-          <span className="flex-1 text-amber-200">{heroMove}</span>
-          <span className="flex-1 text-purple-200">{villainMove ?? ''}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function GameHUD() {
   const turn = useGameStore((s) => s.state.turn);
   const check = useGameStore((s) => s.state.check);
@@ -54,7 +31,6 @@ export function GameHUD() {
           Heróis
         </span>
         <div className="flex flex-col items-center gap-1">
-          <MoveHistory />
           {isOnline && (
             <span className="pointer-events-auto rounded-full bg-white/5 px-3 py-1 text-[10px] normal-case tracking-normal text-zinc-300 backdrop-blur">
               Sala {roomId} · {turnLabel}
