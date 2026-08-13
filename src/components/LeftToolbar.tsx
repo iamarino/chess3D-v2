@@ -1,18 +1,21 @@
 'use client';
 
+import { useGameStore } from '@/store/useGameStore';
 import { useNetworkStore } from '@/store/useNetworkStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useUIStore } from '@/store/useUIStore';
 import { audioManager } from '@/three/AudioManager';
-import { GlobeIcon, MenuIcon, SpeakerOffIcon, SpeakerOnIcon } from './icons';
+import { GlobeIcon, MenuIcon, RestartIcon, SpeakerOffIcon, SpeakerOnIcon, UndoIcon } from './icons';
 
 function ToolButton({
   active,
+  disabled,
   label,
   onClick,
   children,
 }: {
   active?: boolean;
+  disabled?: boolean;
   label: string;
   onClick: () => void;
   children: React.ReactNode;
@@ -23,8 +26,9 @@ function ToolButton({
       title={label}
       aria-label={label}
       onClick={onClick}
+      disabled={disabled}
       className={
-        'flex h-11 w-11 items-center justify-center rounded-lg transition-colors ' +
+        'flex h-11 w-11 items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40 ' +
         (active
           ? 'bg-amber-400/25 text-amber-300 ring-1 ring-amber-400/50'
           : 'text-zinc-300 hover:bg-white/10 hover:text-white')
@@ -43,6 +47,9 @@ export function LeftToolbar() {
   const setMuted = useSettingsStore((s) => s.setMuted);
   const networkStatus = useNetworkStore((s) => s.status);
   const isOnline = networkStatus === 'matched';
+  const historyLength = useGameStore((s) => s.state.history.length);
+  const undo = useGameStore((s) => s.undo);
+  const reset = useGameStore((s) => s.reset);
 
   const withButtonSound = (action: () => void) => () => {
     audioManager.play('button');
@@ -61,6 +68,17 @@ export function LeftToolbar() {
         <div className="my-0.5 h-px bg-white/10" />
         <ToolButton label={muted ? 'Som: Desligado' : 'Som: Ligado'} onClick={() => setMuted(!muted)}>
           {muted ? <SpeakerOffIcon /> : <SpeakerOnIcon />}
+        </ToolButton>
+        <div className="my-0.5 h-px bg-white/10" />
+        <ToolButton
+          label="Desfazer"
+          disabled={historyLength === 0 || isOnline}
+          onClick={withButtonSound(undo)}
+        >
+          <UndoIcon />
+        </ToolButton>
+        <ToolButton label="Reiniciar" disabled={isOnline} onClick={withButtonSound(reset)}>
+          <RestartIcon />
         </ToolButton>
       </div>
     </div>

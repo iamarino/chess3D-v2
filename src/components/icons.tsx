@@ -37,3 +37,21 @@ export function SpeakerOffIcon({ className = base }: IconProps) {
   );
 }
 
+export function UndoIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M7 7 3 11l4 4" />
+      <path d="M3 11h11a6 6 0 0 1 0 12h-2" />
+    </svg>
+  );
+}
+
+export function RestartIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+      <path d="M20 4v5h-5" />
+    </svg>
+  );
+}
+

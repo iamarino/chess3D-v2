@@ -96,23 +96,37 @@ export interface PieceModelConfig {
   glow?: boolean;
 }
 
-const Z_UP_ROTATION: [number, number, number] = [-Math.PI / 2, 0, 0];
-
-// Starter procedural low-poly set (trimesh-generated): authored Z-up with
-// the pivot at the base's bottom center, no textures.
-const TRIMESH_SCALE = 0.52;
-
-function trimeshConfig(path: string): PieceModelConfig {
-  return { path, scale: TRIMESH_SCALE, rotation: Z_UP_ROTATION };
-}
-
 export const MODEL_CONFIGS: Record<PieceColor, Record<PieceType, PieceModelConfig>> = {
   hero: {
     // Tripo-generated (AI image-to-3D), already Y-up with height normalized
     // to 1 unit and a textured PBR material — needs its own scale. Authored
     // facing away from the board's home side, so it's spun 180° to face the camera.
     king: { path: '/models/hero_king.glb', scale: 1.32, rotation: [0, Math.PI, 0] },
-    queen: trimeshConfig('/models/hero_queen.glb'),
+    // Tripo-generated com rig + 2 clipes, já Y-up (altura bruta 1.00025) —
+    // escala escolhida pra bater a altura renderizada da rainha trimesh que
+    // substituiu (2,54 × 0,52 ≈ 1,3208). Autorado de costas para a frente do
+    // tabuleiro — girado 180° no eixo Y, como o resto do time herói.
+    //
+    //   [0] NlaTrack      dur=2.375s  amp=1.424 — caminhada (walkClip)
+    //   [1] NlaTrack.001  dur=2.917s  amp=0.122 — pose curta, sem root motion
+    //       líquido no plano XZ (drift ~0.01 un. local) — usada como introClip.
+    //
+    // Sem attackClip/hitClip: o asset não tem golpe nem queda dedicados.
+    //
+    // walkClip: passada 0,4700 un./passo, 1 casa em 2 passos — 6,0% de
+    // correção de passada, bem abaixo do limiar de ~15%.
+    //
+    // Export original: 2,2M vértices renderizados / 31,3 MB; decimado com a
+    // mesma receita das outras peças Tripo (`gltf-transform simplify --ratio
+    // 0.025 --error 0.001`) para 3,8 MB.
+    queen: {
+      path: '/models/hero_queen.glb',
+      scale: 1.32,
+      rotation: [0, Math.PI, 0],
+      introClip: 'NlaTrack.001',
+      walkClip: 'NlaTrack',
+      walkFootfalls: [0.30, 0.92, 1.46, 2.05],
+    },
     // Tripo-generated com rig + 5 clipes. Exportados como "concordar",
     // "boxe_01", "dança_02", "correr" e "caminhar", mas gravados no .glb como
     // NlaTrack genéricos — mapeados por amplitude/duração do root motion no
@@ -225,7 +239,42 @@ export const MODEL_CONFIGS: Record<PieceColor, Record<PieceType, PieceModelConfi
     // Tripo-generated, but a separate generation from the hero king — its
     // "front" already faces the board center unrotated (unlike the hero king).
     king: { path: '/models/villain_king.glb', scale: 1.32, rotation: [0, 0, 0] },
-    queen: trimeshConfig('/models/villain_queen.glb'),
+    // Tripo-generated com rig + 2 clipes, mesma altura bruta da rainha herói
+    // (1.0) — mesma escala. Frente já olha para o centro do tabuleiro em
+    // rotação identidade, como o resto do time.
+    //
+    //   [0] NlaTrack      dur=2.375s   amp=1.388  — caminhada (walkClip)
+    //   [1] NlaTrack.001  dur=10.917s  amp=0.013  — pose longa, sem root
+    //       motion líquido (drift ~0.0003 un. local) — único clipe além da
+    //       caminhada, então vira introClip mesmo sendo longa (sem
+    //       alternativa curta, como o bispo/cavalo vilões).
+    //
+    // Sem attackClip/hitClip: o asset não tem golpe nem queda dedicados.
+    //
+    // walkClip: passada 0,4581 un./passo, 1 casa em 2 passos — 8,4% de
+    // correção de passada, abaixo do limiar de ~15%.
+    //
+    // Export original: 3,5M vértices renderizados / 48,6 MB; decimado com a
+    // mesma receita das outras peças Tripo para 4,1 MB.
+    //
+    // glow: false + basecolor recolorido (2026-08-13) — 84,3% da textura
+    // original caía na faixa "vermelho" do critério de brilho, e 33,6% batia
+    // no próprio critério de `isGlowing` (S mediano 0.731, bem acima do
+    // 0.55 do threshold) — sem correção, mais de um terço da peça acenderia
+    // como gema. Mesma receita do bispo vilão: medi a mediana HSL dos pixels
+    // "vermelho" (H -6.5°, S 0.731, L 0.249) contra a do cavalo vilão (H
+    // 6.1°, S 0.388, L 0.271) e apliquei só nesses pixels: +12.6° de matiz,
+    // -0.343 de saturação, +0.022 de luminosidade — pele/cabelo lavanda (fora
+    // da faixa vermelha) não foi tocada.
+    queen: {
+      path: '/models/villain_queen.glb',
+      scale: 1.32,
+      rotation: [0, 0, 0],
+      introClip: 'NlaTrack.001',
+      walkClip: 'NlaTrack',
+      walkFootfalls: [0.30, 0.92, 1.46, 2.05],
+      glow: false,
+    },
     // Tripo-generated com rig + 5 clipes. Identificação por
     // `scripts/analisar-caminhada.mjs` + conferência visual (2026-08-11):
     //
