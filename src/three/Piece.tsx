@@ -155,7 +155,10 @@ function PieceModel({
   // configurações para o painel "Ajuste de posição" refletir na hora.
   const modelOffset = useSettingsStore((s) => s.pieceModelOffsets[`${color}-${type}`] ?? DEFAULT_PIECE_MODEL_OFFSET);
 
-  const cloned = useMemo(() => cloneSkinnedScene(scene, color), [scene, color]);
+  const cloned = useMemo(
+    () => cloneSkinnedScene(scene, color, config.glow !== false),
+    [scene, color, config.glow],
+  );
 
   // Troca o clipe de caminhada pela versão in-place: o avanço do osso raiz foi
   // extraído e agora é aplicado por `Piece` na posição do grupo.

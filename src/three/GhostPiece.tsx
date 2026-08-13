@@ -39,7 +39,10 @@ export function GhostPiece({
     (s) => s.pieceModelOffsets[`${piece.color}-${piece.type}`] ?? DEFAULT_PIECE_MODEL_OFFSET,
   );
 
-  const cloned = useMemo(() => cloneSkinnedScene(scene, piece.color), [scene, piece.color]);
+  const cloned = useMemo(
+    () => cloneSkinnedScene(scene, piece.color, config.glow !== false),
+    [scene, piece.color, config.glow],
+  );
   const { actions, names, mixer } = useAnimations(animations, root);
   const clipName = config.hitClip && names.includes(config.hitClip) ? config.hitClip : null;
 

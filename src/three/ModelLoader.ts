@@ -84,6 +84,16 @@ export interface PieceModelConfig {
    * docs/animacao-de-pecas.md. Ao terminar, a peça é removida da cena.
    */
   hitClip?: string;
+  /**
+   * Desliga o brilho por time (`applyGlow`) para este modelo. Default `true`.
+   * O critério de brilho (`isGlowing`) é por cor de pixel, não por região da
+   * malha — em texturas onde pele/cabelo caem no mesmo tom saturado das
+   * gemas (ex.: bispo e cavalo vilões, tom de pele muito vermelho), a máscara
+   * acende o rosto/cabelo inteiro em vez de só as gemas. Sem uma gema de
+   * verdade para isolar, a peça fica bem mais clara que o resto do time —
+   * melhor desligar o brilho todo do que acender partes erradas do corpo.
+   */
+  glow?: boolean;
 }
 
 const Z_UP_ROTATION: [number, number, number] = [-Math.PI / 2, 0, 0];
@@ -148,8 +158,51 @@ export const MODEL_CONFIGS: Record<PieceColor, Record<PieceType, PieceModelConfi
       runClip: 'NlaTrack',
       runFootfalls: [0.25, 0.5, 0.75],
     },
-    bishop: trimeshConfig('/models/hero_bishop.glb'),
-    knight: trimeshConfig('/models/hero_knight.glb'),
+    // Tripo-generated com rig + 3 clipes, já Y-up (altura bruta 0.9997) —
+    // escala escolhida para bater a altura renderizada do bispo trimesh que
+    // substituiu (2,78 × 0,52 ≈ 1,4456). Autorado de costas para a frente do
+    // tabuleiro — girado 180° no eixo Y, como o resto do time herói.
+    //
+    //   [0] NlaTrack      dur=1.833s  amp=1.612  — caminhada (walkClip)
+    //   [1] NlaTrack.001  dur=12.25s  amp=0.182  — pose longa, sem root
+    //       motion líquido (drift ~0); descartada como introClip pelo mesmo
+    //       motivo da "dança_02" da torre herói (docs/animacao-de-pecas.md):
+    //       longa demais para uma entrada.
+    //   [2] NlaTrack.002  dur=2.25s   amp=0.314  — pose curta, sem root
+    //       motion líquido — usada como introClip.
+    //
+    // Sem attackClip/hitClip: o asset não tem golpe nem queda dedicados para
+    // esta peça — captura e remoção seguem o mecanismo genérico (GhostPiece).
+    //
+    // walkClip: passada 0,5843 un./passo, 1 casa em 2 passos — 16,9% de
+    // correção de passada, levemente acima do ~15% em que começa a aparecer
+    // como pé escorregando, mas na mesma faixa já aceita para a torre
+    // (16,6%/17,7%): o asset não tem uma passada melhor disponível nesta
+    // escala, e reduzir a escala para zerar a correção destacaria demais o
+    // bispo do resto do tabuleiro.
+    //
+    // Export original: 4,3M vértices renderizados / 58,5 MB; decimado com
+    // `gltf-transform simplify --ratio 0.025 --error 0.001` (mesma receita
+    // das outras peças Tripo) para 4,1 MB.
+    bishop: {
+      path: '/models/hero_bishop.glb',
+      scale: 1.45,
+      rotation: [0, Math.PI, 0],
+      introClip: 'NlaTrack.002',
+      walkClip: 'NlaTrack',
+      walkFootfalls: [0.21, 0.71, 1.13, 1.62],
+    },
+    // Tripo-generated horse-profile model (sem rig/animação) — malha bruta de
+    // ~2M triângulos, decimada com `gltf-transform simplify --ratio 0.025
+    // --error 0.001` (mesma receita das outras peças Tripo); a malha resistiu
+    // a mais compressão que o normal (parou em ~224k triângulos mesmo com
+    // --error bem mais alto — provável geometria não-manifold/crina em
+    // camadas), então ficou mais pesada que as demais (11,8 MB). Já Y-up,
+    // altura bruta 0.874 — escala escolhida para bater a altura renderizada
+    // do cavalo trimesh que substituiu (2,576 × 0.52 ≈ 1,34). Autorado de
+    // costas para a frente do tabuleiro — girado 180° no eixo Y, como o
+    // resto do time herói.
+    knight: { path: '/models/hero_knight.glb', scale: 1.53, rotation: [0, Math.PI, 0] },
     // Tripo-generated with a rig + 8 baked animation clips (Tripo's Animation tool),
     // replacing the static pawn — raw height is 0.9375 units (vs. 1.0 for the static
     // asset it replaces), scale compensates to keep the same on-board size.
@@ -236,8 +289,82 @@ export const MODEL_CONFIGS: Record<PieceColor, Record<PieceType, PieceModelConfi
       attackClip: 'NlaTrack.002',
       hitClip: 'NlaTrack.004',
     },
-    bishop: trimeshConfig('/models/villain_bishop.glb'),
-    knight: trimeshConfig('/models/villain_knight.glb'),
+    // Tripo-generated com rig + 2 clipes, mesma altura bruta do bispo herói
+    // (0.9996) — mesma escala. Frente já olha para o centro do tabuleiro em
+    // rotação identidade, como o resto do time.
+    //
+    //   [0] NlaTrack      dur=8.5s    amp=0.102  — balanço de repouso (sem
+    //       root motion líquido); sem introClip declarado, `Piece.tsx` cai
+    //       neste (o primeiro clipe do arquivo) por padrão, mesmo mecanismo
+    //       do cavalo vilão.
+    //   [1] NlaTrack.001  dur=2.375s  amp=1.466  — caminhada (walkClip)
+    //
+    // Sem attackClip/hitClip: o asset não tem golpe nem queda dedicados.
+    //
+    // walkClip: passada 0,5313 un./passo, 1 casa em 2 passos — 6,3% de
+    // correção de passada, bem abaixo do limiar de ~15%.
+    //
+    // Export original: 3,7M vértices renderizados / 51,3 MB; decimado com a
+    // mesma receita das outras peças Tripo para 4,0 MB.
+    //
+    // glow: false — a pele do rosto cai no mesmo vermelho saturado do
+    // critério de brilho vilão (`isGlowing`), que é por cor de pixel, não por
+    // região da malha; sem uma gema de verdade pra isolar, a máscara acendia
+    // o rosto inteiro e a peça ficava bem mais clara que o resto do time.
+    //
+    // basecolor recolorido (2026-08-13): 84% da textura original caía na
+    // faixa "vermelho" do critério acima, contra 28-56% nas outras peças
+    // vilãs, e mais saturado (S mediano 0.505 vs 0.355-0.388) — o bispo
+    // destoava visivelmente do tom das outras armaduras vermelhas. Medi a
+    // mediana HSL dos pixels "vermelho" do cavalo vilão (H 6.1°, S 0.388,
+    // L 0.271) contra a do bispo original (H -1.0°, S 0.505, L 0.212) e
+    // apliquei a peças de fase (script `recolor.mjs`, descartável, não
+    // versionado) só nesses pixels: +7.1° de matiz, -0.117 de saturação,
+    // +0.059 de luminosidade — sem mexer no cinza/dourado/normal/roughness.
+    // Robe continua vermelho (é o desenho da peça, não dá pra virar metal
+    // cinza só com correção de cor), só menos neon/rosado. Reaplicar a
+    // mesma receita se o asset for regenerado.
+    bishop: {
+      path: '/models/villain_bishop.glb',
+      scale: 1.45,
+      rotation: [0, 0, 0],
+      walkClip: 'NlaTrack.001',
+      walkFootfalls: [0.30, 0.92, 1.46, 2.05],
+      glow: false,
+    },
+    // Tripo-generated horse-profile model, reexportado (2026-08-13) com rig +
+    // 2 clipes — a versão anterior só tinha o balanço de repouso, sem
+    // caminhada. Altura bruta 0.875, praticamente igual à versão anterior
+    // (0.874) — mesma escala.
+    //
+    //   [0] NlaTrack      dur=2.375s  amp=1.139  — caminhada (walkClip)
+    //   [1] NlaTrack.001  dur=6.042s  amp=0.062  — balanço de repouso (sem
+    //       root motion líquido, mesmo clipe da versão anterior — usado como
+    //       introClip; sem declarar, `Piece.tsx` cairia por padrão no [0], a
+    //       caminhada, e congelaria no fim dela).
+    //
+    // Sem attackClip/hitClip: o asset não tem golpe nem queda dedicados.
+    //
+    // walkClip: passada 0,4355 un./passo, 1 casa em 2 passos — 12,9% de
+    // correção de passada, abaixo do limiar de ~15%.
+    //
+    // Export original: 5,9M vértices renderizados / 80,4 MB; decimado com a
+    // mesma receita das outras peças Tripo para 5,2 MB.
+    //
+    // glow: false — mesmo problema do bispo vilão (pele/crina caem no
+    // vermelho saturado do critério de brilho `isGlowing`, que é por cor de
+    // pixel, não por região da malha); mantido desligado nesta reexportação
+    // também, sem conferência visual — reavaliar se a nova textura já vier
+    // sem esse problema.
+    knight: {
+      path: '/models/villain_knight.glb',
+      scale: 1.53,
+      rotation: [0, 0, 0],
+      introClip: 'NlaTrack.001',
+      walkClip: 'NlaTrack',
+      walkFootfalls: [0.32, 0.92, 1.51, 2.08],
+      glow: false,
+    },
     // Tripo-generated com rig + 4 clipes: parado com braços cruzados (NlaTrack,
     // meio do loop de 13.67s), caminhada (NlaTrack.003), chute de ataque
     // (NlaTrack.002) e queda ao ser capturado (NlaTrack.001). Frente já olha
@@ -432,12 +559,13 @@ function applyGlow(material: THREE.Material, color: PieceColor): void {
  * rig colapsariam sobre a que se moveu por último. SkeletonUtils.clone
  * reconstrói um esqueleto por clone (e serve também para os modelos sem rig).
  */
-export function cloneSkinnedScene(scene: THREE.Object3D, color: PieceColor): THREE.Object3D {
+export function cloneSkinnedScene(scene: THREE.Object3D, color: PieceColor, glow = true): THREE.Object3D {
   const clone = SkeletonUtils.clone(scene) as THREE.Object3D;
   clone.traverse((child) => {
     if (child instanceof THREE.Mesh) {
       child.castShadow = true;
       child.receiveShadow = true;
+      if (!glow) return;
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       materials.forEach((material) => applyGlow(material, color));
     }

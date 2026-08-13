@@ -73,7 +73,10 @@ export const useSettingsStore = create<SettingsState>()(
       // Peão vilão: 1.1x mais raso que o herói e a malha não fica centrada
       // sozinha — sem isso ele fica visivelmente à frente do centro da
       // casa em relação ao peão herói.
-      pieceModelOffsets: { 'villain-pawn': { x: 0, y: 0, z: -0.17 } },
+      // Cavalo vilão: a pose congelada do clipe de idle (`NlaTrack`) deixa o
+      // root motion levemente deslocado para a frente — sem isso a peça fica
+      // com os pés cruzando para a casa da frente.
+      pieceModelOffsets: { 'villain-pawn': { x: 0, y: 0, z: -0.17 }, 'villain-knight': { x: 0, y: 0, z: -0.17 } },
       showCalibrationRuler: false,
       setQuality: (quality) => set({ quality }),
       setCinematicCamera: (cinematicCamera) => set({ cinematicCamera }),
@@ -91,7 +94,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'chess3d-settings',
-      version: 2,
+      version: 3,
       // v0 guardava `pieceWalkDuration` (segundos fixos por jogada) e
       // `pieceWalkOvershoot` (calibração do ponto de parada). Os dois sumiram
       // quando a caminhada passou a ser dirigida pelo root motion do clipe: a
@@ -118,6 +121,14 @@ export const useSettingsStore = create<SettingsState>()(
           state = {
             ...state,
             pieceModelOffsets: { 'villain-pawn': { x: 0, y: 0, z: -0.17 }, ...offsets },
+          };
+        }
+
+        if (version < 3) {
+          const offsets = state?.pieceModelOffsets ?? {};
+          state = {
+            ...state,
+            pieceModelOffsets: { 'villain-knight': { x: 0, y: 0, z: -0.17 }, ...offsets },
           };
         }
 
