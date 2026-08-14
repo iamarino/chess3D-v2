@@ -1,22 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import type { GraphicsQuality, Scenario } from '@/store/useSettingsStore';
-import { DEFAULT_PIECE_MODEL_OFFSET, useSettingsStore } from '@/store/useSettingsStore';
+import { useSettingsStore } from '@/store/useSettingsStore';
 import { useNetworkStore } from '@/store/useNetworkStore';
 import { useUIStore } from '@/store/useUIStore';
 import { BOARD_COLOR_SCHEMES } from '@/themes/boardSchemes';
 
-const THEMES = [
-  { id: 'heroes-villains', name: 'Heróis vs Vilões', available: true },
-  { id: 'medieval', name: 'Medieval', available: false },
-  { id: 'samurai', name: 'Samurai', available: false },
-  { id: 'sci-fi', name: 'Sci-Fi', available: false },
-];
-
 const SCENARIOS: { value: Scenario; label: string; description: string }[] = [
   { value: 'castle-day', label: 'Castelo ao meio-dia', description: 'Céu claro, sol a pino' },
   { value: 'castle-night', label: 'Cerco noturno', description: 'Lua, estrelas e muralha sob luar' },
+  { value: 'volcanic-rift', label: 'Fenda Vulcânica', description: 'Rocha incandescente, céu em brasa e cinzas no ar' },
+  { value: 'football-pitch', label: 'Campo de Futebol', description: 'Grama listrada, arquibancadas e refletores' },
 ];
 
 const QUALITY_OPTIONS: { value: GraphicsQuality; label: string }[] = [
@@ -25,85 +19,6 @@ const QUALITY_OPTIONS: { value: GraphicsQuality; label: string }[] = [
   { value: 'high', label: 'Alta' },
   { value: 'ultra', label: 'Ultra' },
 ];
-
-// A plain <input type="number"> parses with the browser's locale decimal
-// separator (comma in pt-BR) — typing "0.7" silently produced 3, not 0.7.
-// This text field does its own parsing, accepting either "." or ",", and
-// only commits on blur/Enter so partial input like "0." isn't clobbered.
-function DecimalField({
-  value,
-  onCommit,
-  min,
-  max,
-  disabled,
-}: {
-  value: number;
-  onCommit: (value: number) => void;
-  min: number;
-  max: number;
-  disabled?: boolean;
-}) {
-  const [text, setText] = useState(() => value.toFixed(2));
-  useEffect(() => {
-    setText(value.toFixed(2));
-  }, [value]);
-
-  function commit(raw: string) {
-    const normalized = raw.replace(',', '.').trim();
-    const parsed = Number(normalized);
-    if (normalized !== '' && normalized !== '-' && !Number.isNaN(parsed)) {
-      onCommit(Math.min(max, Math.max(min, parsed)));
-    } else {
-      setText(value.toFixed(2));
-    }
-  }
-
-  return (
-    <input
-      type="text"
-      inputMode="decimal"
-      value={text}
-      onChange={(event) => setText(event.target.value)}
-      onBlur={(event) => commit(event.target.value)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          commit(event.currentTarget.value);
-          event.currentTarget.blur();
-        }
-      }}
-      disabled={disabled}
-      className="w-16 rounded border border-white/10 bg-white/10 px-1 py-0.5 text-right text-zinc-100"
-    />
-  );
-}
-
-function AxisOffsetRow({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="flex items-center justify-between text-xs text-zinc-400">
-        <span>{label}</span>
-        <DecimalField value={value} onCommit={onChange} min={-0.5} max={0.5} />
-      </label>
-      <input
-        type="range"
-        min={-0.5}
-        max={0.5}
-        step={0.01}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="w-full"
-      />
-    </div>
-  );
-}
 
 export function SettingsMenu() {
   const isOpen = useUIStore((s) => s.isMenuOpen);
@@ -128,14 +43,6 @@ export function SettingsMenu() {
   const setDiscoFloor = useSettingsStore((s) => s.setDiscoFloor);
   const showLegalMoves = useSettingsStore((s) => s.showLegalMoves);
   const setShowLegalMoves = useSettingsStore((s) => s.setShowLegalMoves);
-  const pieceWalkAnimation = useSettingsStore((s) => s.pieceWalkAnimation);
-  const setPieceWalkAnimation = useSettingsStore((s) => s.setPieceWalkAnimation);
-  const pieceWalkTempo = useSettingsStore((s) => s.pieceWalkTempo);
-  const setPieceWalkTempo = useSettingsStore((s) => s.setPieceWalkTempo);
-  const heroPawnOffset = useSettingsStore((s) => s.pieceModelOffsets['hero-pawn'] ?? DEFAULT_PIECE_MODEL_OFFSET);
-  const setPieceModelOffset = useSettingsStore((s) => s.setPieceModelOffset);
-  const showCalibrationRuler = useSettingsStore((s) => s.showCalibrationRuler);
-  const setShowCalibrationRuler = useSettingsStore((s) => s.setShowCalibrationRuler);
 
   if (!isOpen) return null;
 
@@ -158,27 +65,6 @@ export function SettingsMenu() {
             Fechar
           </button>
         </div>
-
-        <section className="mb-6">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-zinc-400">Tema</h3>
-          <div className="flex flex-col gap-2">
-            {THEMES.map((theme) => (
-              <button
-                key={theme.id}
-                type="button"
-                disabled={!theme.available}
-                className={`rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                  theme.available
-                    ? 'bg-amber-500/20 text-amber-100'
-                    : 'cursor-not-allowed bg-white/5 text-zinc-500'
-                }`}
-              >
-                {theme.name}
-                {!theme.available && <span className="ml-2 text-xs">(em breve)</span>}
-              </button>
-            ))}
-          </div>
-        </section>
 
         <section className="mb-6">
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-zinc-400">Cenário</h3>
@@ -283,88 +169,6 @@ export function SettingsMenu() {
               className="h-4 w-4 shrink-0"
             />
           </label>
-        </section>
-
-        <section className="mb-6">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-zinc-400">
-            Animação de peças
-          </h3>
-          <label className="mb-2 flex items-center justify-between rounded-lg bg-white/5 px-3 py-2 text-sm">
-            <span>
-              Animação de caminhada
-              <span className="block text-xs text-zinc-500">Peças com rig (hoje só o peão herói) caminham até a casa</span>
-            </span>
-            <input
-              type="checkbox"
-              checked={pieceWalkAnimation}
-              onChange={(event) => setPieceWalkAnimation(event.target.checked)}
-              className="h-4 w-4 shrink-0"
-            />
-          </label>
-          <div className={`flex flex-col gap-3 px-1 transition-opacity ${pieceWalkAnimation ? '' : 'pointer-events-none opacity-40'}`}>
-            <div className="flex flex-col gap-1">
-              <label className="flex justify-between text-xs text-zinc-400">
-                <span>Ritmo da caminhada</span>
-                <span>{pieceWalkTempo.toFixed(2)}×</span>
-              </label>
-              <input
-                type="range"
-                min={0.6}
-                max={2}
-                step={0.05}
-                value={pieceWalkTempo}
-                onChange={(event) => setPieceWalkTempo(Number(event.target.value))}
-                disabled={!pieceWalkAnimation}
-                className="w-full"
-              />
-              <span className="text-xs text-zinc-500">
-                1.00× é a cadência em que a animação foi feita. A duração da jogada sai da
-                distância — duas casas levam o dobro de passos, não o dobro de pressa.
-              </span>
-            </div>
-          </div>
-        </section>
-
-        <section className="mb-6">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-zinc-400">
-            Ajuste de posição — Peão herói
-          </h3>
-          <label className="mb-3 flex items-center justify-between rounded-lg bg-white/5 px-3 py-2 text-sm">
-            <span>
-              Régua de calibração
-              <span className="block text-xs text-zinc-500">
-                Grade fina sobre a d2 + régua ao longo da coluna h (torre do lado do rei), do
-                início ao fim do tabuleiro — temporária, só para achar os números certos
-              </span>
-            </span>
-            <input
-              type="checkbox"
-              checked={showCalibrationRuler}
-              onChange={(event) => setShowCalibrationRuler(event.target.checked)}
-              className="h-4 w-4 shrink-0"
-            />
-          </label>
-          <div className="flex flex-col gap-3 px-1">
-            <AxisOffsetRow
-              label="Esquerda / Direita (X)"
-              value={heroPawnOffset.x}
-              onChange={(x) => setPieceModelOffset('hero-pawn', { ...heroPawnOffset, x })}
-            />
-            <AxisOffsetRow
-              label="Cima / Baixo (Y)"
-              value={heroPawnOffset.y}
-              onChange={(y) => setPieceModelOffset('hero-pawn', { ...heroPawnOffset, y })}
-            />
-            <AxisOffsetRow
-              label="Frente / Trás (Z)"
-              value={heroPawnOffset.z}
-              onChange={(z) => setPieceModelOffset('hero-pawn', { ...heroPawnOffset, z })}
-            />
-            <span className="text-xs text-zinc-500">
-              Corrige o modelo que não está centralizado na própria casa. Por enquanto só o peão
-              herói — as outras peças e o time vilão ganham o mesmo ajuste depois.
-            </span>
-          </div>
         </section>
 
         <section className="mb-6">

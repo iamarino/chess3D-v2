@@ -5,7 +5,7 @@ import { DEFAULT_BOARD_SCHEME_ID } from '@/themes/boardSchemes';
 export type GraphicsQuality = 'low' | 'medium' | 'high' | 'ultra';
 
 /** Backdrop procedural (sem trocar tema de peça/tabuleiro) — ver `Environment.tsx`. */
-export type Scenario = 'castle-day' | 'castle-night';
+export type Scenario = 'castle-day' | 'castle-night' | 'volcanic-rift' | 'football-pitch';
 
 export interface PieceModelOffset {
   x: number;
@@ -67,7 +67,7 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       quality: 'low',
       scenario: 'castle-day',
-      cinematicCamera: true,
+      cinematicCamera: false,
       masterVolume: 0.8,
       effectsVolume: 0.6,
       muted: false,
@@ -101,7 +101,16 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'chess3d-settings',
-      version: 3,
+      version: 4,
+      // Câmera cinematográfica sempre começa desligada — o toggle é só para
+      // a sessão atual, não persiste entre recargas (evita ligar sozinha
+      // ao entrar numa partida online, onde ela é forçada off de qualquer
+      // forma pelo CameraDirector).
+      partialize: (state) => {
+        const { cinematicCamera, ...rest } = state;
+        void cinematicCamera;
+        return rest;
+      },
       // v0 guardava `pieceWalkDuration` (segundos fixos por jogada) e
       // `pieceWalkOvershoot` (calibração do ponto de parada). Os dois sumiram
       // quando a caminhada passou a ser dirigida pelo root motion do clipe: a
@@ -131,7 +140,14 @@ export const useSettingsStore = create<SettingsState>()(
           };
         }
 
-        if (version < 3) {
+        if (version < 4) {
+          // Este passo nasceu ainda sob a v3 (mesmo commit que introduziu o
+          // cavalo vilão animado), então sessões que já tinham sido migradas
+          // para v3 antes dessa mudança (versão persistida == versão alvo,
+          // `migrate` nunca roda de novo) ficaram permanentemente sem o
+          // offset do cavalo — sem bump de versão elas nunca receberiam esta
+          // correção. `< 4` cobre as duas situações: quem ainda estava < 3 e
+          // quem já tinha "v3" sem o cavalo.
           const offsets = state?.pieceModelOffsets ?? {};
           state = {
             ...state,
@@ -139,7 +155,7 @@ export const useSettingsStore = create<SettingsState>()(
           };
         }
 
-        return state;
+        return state as SettingsState;
       },
     },
   ),

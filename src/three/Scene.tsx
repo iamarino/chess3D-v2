@@ -31,6 +31,8 @@ preloadAllPieceModels();
 const SCENARIO_LIGHT = {
   'castle-day': { background: theme.environment.backgroundColor, ambient: 0.85, sunColor: '#fff6e6', sunIntensity: 2 },
   'castle-night': { background: '#0e0a1f', ambient: 0.32, sunColor: '#a9c0ff', sunIntensity: 0.55 },
+  'volcanic-rift': { background: '#2b0d08', ambient: 0.55, sunColor: '#ff7a3d', sunIntensity: 1.3 },
+  'football-pitch': { background: '#bfe0f7', ambient: 0.95, sunColor: '#ffffff', sunIntensity: 2.1 },
 } as const;
 
 const HOME_CAMERA = {

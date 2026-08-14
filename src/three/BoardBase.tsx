@@ -4,6 +4,7 @@ import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useGameStore } from '@/store/useGameStore';
+import { useSettingsStore } from '@/store/useSettingsStore';
 import { heroesVillainsTheme } from '@/themes/heroes-villains/theme';
 import { PillarFlame } from './effects/PillarFlame';
 import { PixelTorch } from './effects/PixelTorch';
@@ -19,7 +20,10 @@ const OUTER = HALF + FRAME_THICKNESS;
 const PILLAR_DIST = OUTER + 0.35;
 // Plinth must reach well past the pillars so they stand on solid ground
 // instead of floating past its edge (pillar base radius + banner overhang).
-const PLINTH_HALF = PILLAR_DIST + 0.7;
+// Exportado porque o cenário de campo de futebol (`StadiumStands.tsx`) usa
+// esse raio pra interromper a linha do meio de campo nas bordas do plinto,
+// em vez de desenhá-la por cima do tabuleiro.
+export const PLINTH_HALF = PILLAR_DIST + 0.7;
 const PLINTH_TOP_Y = -PLINTH_HEIGHT / 2 - 0.02 + PLINTH_HEIGHT / 2;
 
 // Tochas de pé sobre a superfície cinza do plinto — 4 nas laterais (2 por
@@ -170,6 +174,9 @@ function Pillar({ position, glowColor, bannerColor, outward, active }: PillarPro
 /** Static structure around the interactive squares: frame, plinth, corner pillars with banners. */
 export function BoardBase() {
   const turn = useGameStore((s) => s.state.turn);
+  // Tochas de madeira não combinam com o campo de futebol — só aparecem nos
+  // cenários que fazem sentido pra fogo (castelo/vulcânico).
+  const showTorches = useSettingsStore((s) => s.scenario) !== 'football-pitch';
   const heroGlow = theme.pieces.hero.accentColor;
   const villainGlow = theme.pieces.villain.accentColor;
   const heroBanner = theme.pieces.hero.primaryColor;
@@ -206,9 +213,7 @@ export function BoardBase() {
       </mesh>
 
       {/* tochas de pé na superfície cinza do plinto — luz de fogo extra ao redor do tabuleiro */}
-      {TORCH_MOUNTS.map((position, i) => (
-        <PixelTorch key={i} position={position} />
-      ))}
+      {showTorches && TORCH_MOUNTS.map((position, i) => <PixelTorch key={i} position={position} />)}
 
       {/* corner pillars: hero side (z > 0, gold) vs villain side (z < 0, purple) */}
       <Pillar
