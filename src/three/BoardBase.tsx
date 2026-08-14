@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { useGameStore } from '@/store/useGameStore';
 import { heroesVillainsTheme } from '@/themes/heroes-villains/theme';
 import { PillarFlame } from './effects/PillarFlame';
+import { PixelTorch } from './effects/PixelTorch';
 
 const theme = heroesVillainsTheme;
 
@@ -20,6 +21,26 @@ const PILLAR_DIST = OUTER + 0.35;
 // instead of floating past its edge (pillar base radius + banner overhang).
 const PLINTH_HALF = PILLAR_DIST + 0.7;
 const PLINTH_TOP_Y = -PLINTH_HEIGHT / 2 - 0.02 + PLINTH_HEIGHT / 2;
+
+// Tochas de pé sobre a superfície cinza do plinto — 4 nas laterais (2 por
+// lado) e 2 atrás de cada time (herói e vilão), num anel simétrico ao redor
+// do tabuleiro inteiro.
+const TORCH_ALONG_OFFSET = 2.2;
+// No meio da faixa de mármore cinza visível do plinto — entre a borda do
+// quadro do tabuleiro (OUTER) e a borda externa do plinto (PLINTH_HALF).
+// Perto demais da borda externa (ex.: PLINTH_HALF - 0.35) deixava a base do
+// poste quase caindo pra grama, que começa logo depois do plinto.
+const TORCH_EDGE_INSET = (OUTER + PLINTH_HALF) / 2;
+const TORCH_MOUNTS: [number, number, number][] = [
+  [TORCH_EDGE_INSET, PLINTH_TOP_Y, TORCH_ALONG_OFFSET],
+  [TORCH_EDGE_INSET, PLINTH_TOP_Y, -TORCH_ALONG_OFFSET],
+  [-TORCH_EDGE_INSET, PLINTH_TOP_Y, TORCH_ALONG_OFFSET],
+  [-TORCH_EDGE_INSET, PLINTH_TOP_Y, -TORCH_ALONG_OFFSET],
+  [TORCH_ALONG_OFFSET, PLINTH_TOP_Y, -TORCH_EDGE_INSET], // atrás do time vilão
+  [-TORCH_ALONG_OFFSET, PLINTH_TOP_Y, -TORCH_EDGE_INSET], // atrás do time vilão
+  [TORCH_ALONG_OFFSET, PLINTH_TOP_Y, TORCH_EDGE_INSET], // atrás do time herói
+  [-TORCH_ALONG_OFFSET, PLINTH_TOP_Y, TORCH_EDGE_INSET], // atrás do time herói
+];
 
 // Mármore com pequenos pingos/respingos brancos espalhados e pouquíssimas
 // rachadas finas. Duas variantes: "black" (moldura, bem escura, encostando
@@ -183,6 +204,11 @@ export function BoardBase() {
         <boxGeometry args={[PLINTH_HALF * 2, PLINTH_HEIGHT, PLINTH_HALF * 2]} />
         <meshStandardMaterial map={marblePlinth} roughness={0.3} metalness={0.2} />
       </mesh>
+
+      {/* tochas de pé na superfície cinza do plinto — luz de fogo extra ao redor do tabuleiro */}
+      {TORCH_MOUNTS.map((position, i) => (
+        <PixelTorch key={i} position={position} />
+      ))}
 
       {/* corner pillars: hero side (z > 0, gold) vs villain side (z < 0, purple) */}
       <Pillar
