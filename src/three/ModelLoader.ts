@@ -102,29 +102,38 @@ export const MODEL_CONFIGS: Record<PieceColor, Record<PieceType, PieceModelConfi
     // to 1 unit and a textured PBR material — needs its own scale. Authored
     // facing away from the board's home side, so it's spun 180° to face the camera.
     king: { path: '/models/hero_king.glb', scale: 1.32, rotation: [0, Math.PI, 0] },
-    // Tripo-generated com rig + 2 clipes, já Y-up (altura bruta 1.00025) —
-    // escala escolhida pra bater a altura renderizada da rainha trimesh que
-    // substituiu (2,54 × 0,52 ≈ 1,3208). Autorado de costas para a frente do
-    // tabuleiro — girado 180° no eixo Y, como o resto do time herói.
+    // Reexportado (2026-08-13, "rainha azul") com rig + 2 clipes, mesma
+    // altura bruta (0,9996) — mesma escala 1,32 da versão anterior. Autorado
+    // de costas para a frente do tabuleiro — girado 180° no eixo Y, como o
+    // resto do time herói.
     //
-    //   [0] NlaTrack      dur=2.375s  amp=1.424 — caminhada (walkClip)
-    //   [1] NlaTrack.001  dur=2.917s  amp=0.122 — pose curta, sem root motion
-    //       líquido no plano XZ (drift ~0.01 un. local) — usada como introClip.
+    //   [0] NlaTrack      dur=12.833s  amp=0.319 — pose longa com balanço de
+    //       peso — sem alternativa curta, então vira introClip mesmo com um
+    //       drift líquido não desprezível (0,28 local / 0,37 un. de mundo,
+    //       ~35% de uma casa); único clipe além da caminhada, mesma situação
+    //       da rainha vilã (docs/animacao-de-pecas.md). Conferido visualmente
+    //       (2026-08-13): a peça assenta dentro da casa, sem sair visivelmente
+    //       do centro.
+    //   [1] NlaTrack.001  dur=2.375s   amp=1.424 — caminhada (walkClip)
     //
     // Sem attackClip/hitClip: o asset não tem golpe nem queda dedicados.
     //
     // walkClip: passada 0,4700 un./passo, 1 casa em 2 passos — 6,0% de
     // correção de passada, bem abaixo do limiar de ~15%.
     //
-    // Export original: 2,2M vértices renderizados / 31,3 MB; decimado com a
-    // mesma receita das outras peças Tripo (`gltf-transform simplify --ratio
-    // 0.025 --error 0.001`) para 3,8 MB.
+    // Export original: 31,4 MB; decimado com a mesma receita das outras
+    // peças Tripo (`gltf-transform simplify --ratio 0.025 --error 0.001`)
+    // para 3,85 MB.
+    //
+    // Textura já em azul escuro (L mediano 0.186) — abaixo do L>0.55 do
+    // critério `isGlowing` do time herói, então não acende nada por engano;
+    // sem necessidade de glow:false nem recolor, ao contrário da rainha vilã.
     queen: {
       path: '/models/hero_queen.glb',
       scale: 1.32,
       rotation: [0, Math.PI, 0],
-      introClip: 'NlaTrack.001',
-      walkClip: 'NlaTrack',
+      introClip: 'NlaTrack',
+      walkClip: 'NlaTrack.001',
       walkFootfalls: [0.30, 0.92, 1.46, 2.05],
     },
     // Tripo-generated com rig + 5 clipes. Exportados como "concordar",
@@ -239,39 +248,46 @@ export const MODEL_CONFIGS: Record<PieceColor, Record<PieceType, PieceModelConfi
     // Tripo-generated, but a separate generation from the hero king — its
     // "front" already faces the board center unrotated (unlike the hero king).
     king: { path: '/models/villain_king.glb', scale: 1.32, rotation: [0, 0, 0] },
-    // Tripo-generated com rig + 2 clipes, mesma altura bruta da rainha herói
-    // (1.0) — mesma escala. Frente já olha para o centro do tabuleiro em
-    // rotação identidade, como o resto do time.
+    // Reexportado (2026-08-13, "rainha vermelha") com rig + 2 clipes, mesma
+    // altura bruta da rainha herói (1.0) — mesma escala. Frente já olha para
+    // o centro do tabuleiro em rotação identidade, como o resto do time.
     //
-    //   [0] NlaTrack      dur=2.375s   amp=1.388  — caminhada (walkClip)
-    //   [1] NlaTrack.001  dur=10.917s  amp=0.013  — pose longa, sem root
-    //       motion líquido (drift ~0.0003 un. local) — único clipe além da
-    //       caminhada, então vira introClip mesmo sendo longa (sem
-    //       alternativa curta, como o bispo/cavalo vilões).
+    //   [0] NlaTrack      dur=12.833s  amp=0.460  — pose longa, sem root
+    //       motion líquido (avanço total 0.051 un. de mundo nessa escala) —
+    //       único clipe além da caminhada, então vira introClip mesmo sendo
+    //       longa (sem alternativa curta, como o bispo/cavalo vilões).
+    //   [1] NlaTrack.001  dur=2.375s   amp=1.421  — caminhada (walkClip)
+    //
+    // Nomes dos clipes trocados em relação à versão anterior do asset
+    // (antes: caminhada em NlaTrack, pose em NlaTrack.001) — conferir sempre
+    // com `scripts/analisar-caminhada.mjs`, nunca assumir por posição.
     //
     // Sem attackClip/hitClip: o asset não tem golpe nem queda dedicados.
     //
-    // walkClip: passada 0,4581 un./passo, 1 casa em 2 passos — 8,4% de
+    // walkClip: passada 0,4689 un./passo, 1 casa em 2 passos — 6,2% de
     // correção de passada, abaixo do limiar de ~15%.
     //
-    // Export original: 3,5M vértices renderizados / 48,6 MB; decimado com a
-    // mesma receita das outras peças Tripo para 4,1 MB.
+    // Export original: 46,2 MB; decimado com a mesma receita das outras
+    // peças Tripo (`gltf-transform simplify --ratio 0.025 --error 0.001`)
+    // para 3,85 MB.
     //
-    // glow: false + basecolor recolorido (2026-08-13) — 84,3% da textura
-    // original caía na faixa "vermelho" do critério de brilho, e 33,6% batia
-    // no próprio critério de `isGlowing` (S mediano 0.731, bem acima do
-    // 0.55 do threshold) — sem correção, mais de um terço da peça acenderia
-    // como gema. Mesma receita do bispo vilão: medi a mediana HSL dos pixels
-    // "vermelho" (H -6.5°, S 0.731, L 0.249) contra a do cavalo vilão (H
-    // 6.1°, S 0.388, L 0.271) e apliquei só nesses pixels: +12.6° de matiz,
-    // -0.343 de saturação, +0.022 de luminosidade — pele/cabelo lavanda (fora
-    // da faixa vermelha) não foi tocada.
+    // glow: false + basecolor recolorido (2026-08-13) — 99,7% da textura
+    // original caía na faixa "vermelho" do critério de brilho (é um asset
+    // pintado de vermelho por inteiro, sem gema separada para isolar), e
+    // 25,9% batia no próprio critério de `isGlowing` (S mediano 0.587, acima
+    // do 0.55 do threshold) — sem correção, um quarto da peça acenderia como
+    // gema. Mesma receita das outras peças vilãs: medi a mediana HSL dos
+    // pixels "vermelho" (H -8.2°, S 0.587, L 0.255) contra a do cavalo vilão
+    // (H 6.1°, S 0.388, L 0.271) e apliquei só nesses pixels: +14.3° de
+    // matiz, -0.199 de saturação, +0.016 de luminosidade (isGlowing % caiu
+    // para 6,9 — glow: false continua necessário, a correção só aproxima o
+    // tom do resto do time).
     queen: {
       path: '/models/villain_queen.glb',
       scale: 1.32,
       rotation: [0, 0, 0],
-      introClip: 'NlaTrack.001',
-      walkClip: 'NlaTrack',
+      introClip: 'NlaTrack',
+      walkClip: 'NlaTrack.001',
       walkFootfalls: [0.30, 0.92, 1.46, 2.05],
       glow: false,
     },
