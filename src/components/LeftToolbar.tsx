@@ -57,19 +57,22 @@ export function LeftToolbar() {
   };
 
   return (
-    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center">
-      <div className="pointer-events-auto flex flex-col gap-1 rounded-r-xl border border-white/10 bg-zinc-900/70 p-1.5 backdrop-blur-md">
+    // Em telas pequenas o toolbar fica deitado, encostado no topo (menos
+    // largura horizontal disponível pro tabuleiro); a partir de `sm` volta a
+    // ficar em pé, encostado na borda esquerda.
+    <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center sm:inset-x-auto sm:inset-y-0 sm:top-auto sm:left-0 sm:justify-start sm:items-center">
+      <div className="pointer-events-auto flex flex-row gap-1 rounded-b-xl border border-white/10 bg-zinc-900/70 p-1.5 backdrop-blur-md sm:flex-col sm:rounded-b-none sm:rounded-r-xl">
         <ToolButton label="Menu" onClick={withButtonSound(toggleMenu)}>
           <MenuIcon />
         </ToolButton>
         <ToolButton label={isOnline ? 'Online' : 'Jogar Online'} active={isOnline} onClick={withButtonSound(toggleOnlineLobby)}>
           <GlobeIcon />
         </ToolButton>
-        <div className="my-0.5 h-px bg-white/10" />
+        <div className="mx-0.5 w-px self-stretch bg-white/10 sm:mx-0 sm:my-0.5 sm:h-px sm:w-auto sm:self-auto" />
         <ToolButton label={muted ? 'Som: Desligado' : 'Som: Ligado'} onClick={() => setMuted(!muted)}>
           {muted ? <SpeakerOffIcon /> : <SpeakerOnIcon />}
         </ToolButton>
-        <div className="my-0.5 h-px bg-white/10" />
+        <div className="mx-0.5 w-px self-stretch bg-white/10 sm:mx-0 sm:my-0.5 sm:h-px sm:w-auto sm:self-auto" />
         <ToolButton
           label="Desfazer"
           disabled={historyLength === 0 || isOnline}

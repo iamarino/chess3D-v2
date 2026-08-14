@@ -56,7 +56,7 @@ export function GameHUD() {
         </div>
       )}
 
-      <div className="pointer-events-none absolute bottom-6 right-6 flex flex-col items-center gap-2">
+      <div className="pointer-events-none absolute bottom-6 right-6 hidden flex-col items-center gap-2 sm:flex">
         <div
           className={
             'relative h-24 w-24 shrink-0 rounded-full ring-4 ring-[#3f7dd6]/70 shadow-[0_0_24px_rgba(63,125,214,0.65)] transition-all duration-500 ' +
@@ -73,7 +73,7 @@ export function GameHUD() {
         </div>
       </div>
 
-      <div className="pointer-events-none absolute bottom-6 left-6 flex flex-col items-center gap-2">
+      <div className="pointer-events-none absolute bottom-6 left-6 hidden flex-col items-center gap-2 sm:flex">
         <div
           className={
             /* Tom medido nos pixels de armadura do cavalo vilão (H 6.1°, S 0.388, L 0.271) — ver ModelLoader.ts */
