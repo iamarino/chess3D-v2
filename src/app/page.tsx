@@ -6,11 +6,13 @@ import { NetworkBridge } from '@/components/NetworkBridge';
 import { OnlineLobby } from '@/components/OnlineLobby';
 import { PromotionPicker } from '@/components/PromotionPicker';
 import { SettingsMenu } from '@/components/SettingsMenu';
+import { TurnVignette } from '@/components/TurnVignette';
 
 export default function Home() {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-black">
       <ChessBoard3D />
+      <TurnVignette />
       <GameHUD />
       <LeftToolbar />
       <PromotionPicker />
