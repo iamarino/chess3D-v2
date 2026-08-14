@@ -11,12 +11,14 @@ function ToolButton({
   active,
   disabled,
   label,
+  emphasize,
   onClick,
   children,
 }: {
   active?: boolean;
   disabled?: boolean;
   label: string;
+  emphasize?: boolean;
   onClick: () => void;
   children: React.ReactNode;
 }) {
@@ -28,13 +30,18 @@ function ToolButton({
       onClick={onClick}
       disabled={disabled}
       className={
-        'flex h-11 w-11 items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40 ' +
+        'flex h-11 items-center justify-center gap-2.5 rounded-lg px-1.5 transition-colors disabled:cursor-not-allowed disabled:opacity-40 sm:w-11 lg:w-auto lg:justify-start lg:px-3 ' +
         (active
           ? 'bg-amber-400/25 text-amber-300 ring-1 ring-amber-400/50'
-          : 'text-zinc-300 hover:bg-white/10 hover:text-white')
+          : emphasize
+            ? 'text-emerald-300 hover:bg-emerald-400/15 hover:text-emerald-200'
+            : 'text-zinc-300 hover:bg-white/10 hover:text-white')
       }
     >
-      {children}
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center">{children}</span>
+      <span className={'hidden whitespace-nowrap text-sm lg:inline ' + (emphasize ? 'font-semibold' : 'font-medium')}>
+        {label}
+      </span>
     </button>
   );
 }
@@ -59,13 +66,18 @@ export function LeftToolbar() {
   return (
     // Em telas pequenas o toolbar fica deitado, encostado no topo (menos
     // largura horizontal disponível pro tabuleiro); a partir de `sm` volta a
-    // ficar em pé, encostado na borda esquerda.
-    <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center sm:inset-x-auto sm:inset-y-0 sm:top-auto sm:left-0 sm:justify-start sm:items-center">
+    // ficar em pé, encostado na borda esquerda e centralizado verticalmente.
+    <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center sm:inset-x-auto sm:top-1/2 sm:left-0 sm:-translate-y-1/2 sm:justify-start">
       <div className="pointer-events-auto flex flex-row gap-1 rounded-b-xl border border-white/10 bg-zinc-900/70 p-1.5 backdrop-blur-md sm:flex-col sm:rounded-b-none sm:rounded-r-xl">
         <ToolButton label="Menu" onClick={withButtonSound(toggleMenu)}>
           <MenuIcon />
         </ToolButton>
-        <ToolButton label={isOnline ? 'Online' : 'Jogar Online'} active={isOnline} onClick={withButtonSound(toggleOnlineLobby)}>
+        <ToolButton
+          label={isOnline ? 'Online' : 'Jogar Online'}
+          active={isOnline}
+          emphasize={!isOnline}
+          onClick={withButtonSound(toggleOnlineLobby)}
+        >
           <GlobeIcon />
         </ToolButton>
         <div className="mx-0.5 w-px self-stretch bg-white/10 sm:mx-0 sm:my-0.5 sm:h-px sm:w-auto sm:self-auto" />
