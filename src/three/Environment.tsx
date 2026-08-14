@@ -28,6 +28,46 @@ const SKY_FRAGMENT_SHADER = `
   }
 `;
 
+// Grama estilo Minecraft: pixels quadrados sólidos (sem blur/gradiente) em
+// tons de verde levemente variados, como a textura dithered do bloco de grama.
+const GRASS_COLORS = ['#63a83f', '#63a83f', '#5c9a3a', '#6fb848', '#578f36', '#63a83f'];
+const GRASS_PX = 8; // tamanho de cada "pixel" do bloco, em pixels de canvas
+const GRASS_GRID = 16; // 16x16 pixels por tile, como uma textura de bloco do Minecraft
+const GRASS_TILE_WORLD_SIZE = 1; // cada tile da textura cobre 1 unidade do mundo
+
+let sharedGrassCanvas: HTMLCanvasElement | null = null;
+
+function getGrassCanvas(): HTMLCanvasElement {
+  if (sharedGrassCanvas) return sharedGrassCanvas;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = GRASS_PX * GRASS_GRID;
+  canvas.height = GRASS_PX * GRASS_GRID;
+  const ctx = canvas.getContext('2d')!;
+
+  for (let y = 0; y < GRASS_GRID; y++) {
+    for (let x = 0; x < GRASS_GRID; x++) {
+      ctx.fillStyle = GRASS_COLORS[Math.floor(Math.random() * GRASS_COLORS.length)];
+      ctx.fillRect(x * GRASS_PX, y * GRASS_PX, GRASS_PX, GRASS_PX);
+    }
+  }
+
+  sharedGrassCanvas = canvas;
+  return canvas;
+}
+
+function makeGrassTexture(worldWidth: number, worldHeight: number): THREE.CanvasTexture {
+  const texture = new THREE.CanvasTexture(getGrassCanvas());
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  // Nearest = sem suavização entre pixels, mantendo o visual quadriculado do Minecraft.
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.repeat.set(worldWidth / GRASS_TILE_WORLD_SIZE, worldHeight / GRASS_TILE_WORLD_SIZE);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 /**
  * A bright castle-balcony backdrop: gradient daytime sky, distant blocky
  * mountains, a crenellated parapet, atmospheric fog, and ambient motes.
@@ -36,6 +76,8 @@ const SKY_FRAGMENT_SHADER = `
 export function Environment() {
   const quality = useSettingsStore((s) => s.quality);
   const motesCount = QUALITY_PRESETS[quality].ambientMotes;
+
+  const groundTexture = useMemo(() => makeGrassTexture(60, 60), []);
 
   const skyMaterial = useMemo(
     () =>
@@ -61,7 +103,7 @@ export function Environment() {
       </mesh>
       <mesh position={[0, -0.58, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <circleGeometry args={[30, 48]} />
-        <meshStandardMaterial color="#9c9384" roughness={0.95} metalness={0.05} />
+        <meshStandardMaterial map={groundTexture} roughness={0.95} metalness={0.05} />
       </mesh>
       <Mountains />
       <CastleWalls />
