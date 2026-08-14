@@ -19,6 +19,23 @@ export interface PieceModelConfig {
    */
   introClip?: string;
   /**
+   * Congela o `introClip` neste instante (segundos, tempo real — o clipe
+   * continua tocando na velocidade original, só é cortado aí) — para clipes
+   * de pose longos que do contrário ainda estariam tocando muito depois do
+   * resto do time já ter assentado no tabuleiro. Deixe sem definir para
+   * tocar o clipe até o fim natural dele.
+   */
+  introFreezeAt?: number;
+  /**
+   * Desliga completamente o `introClip` — a peça não toca nenhuma animação
+   * de entrada, nem cai no primeiro clipe do arquivo (comportamento padrão
+   * quando `introClip` não é declarado). Usado quando o único clipe
+   * disponível para servir de intro para numa pose ruim quando cortado
+   * (ex.: as rainhas, cujo único clipe fora a caminhada é uma "dança" longa
+   * sem um instante de pose limpa para congelar).
+   */
+  noIntro?: boolean;
+  /**
    * Name of the clip to loop while the piece is sliding between squares,
    * for models with baked animation. Leave unset to skip the walk cycle
    * and just glide (no leg motion) between squares.
@@ -132,7 +149,12 @@ export const MODEL_CONFIGS: Record<PieceColor, Record<PieceType, PieceModelConfi
       path: '/models/hero_queen.glb',
       scale: 1.32,
       rotation: [0, Math.PI, 0],
-      introClip: 'NlaTrack',
+      // Sem introClip: o único clipe fora a caminhada é uma "dança" de
+      // 12,833s sem um instante de pose limpa — congelar em qualquer ponto
+      // cortado deixava a peça parada numa pose ruim. `noIntro` evita o
+      // fallback padrão pro primeiro clipe do arquivo; a peça assenta na
+      // pose de bind do rig, sem animação de entrada.
+      noIntro: true,
       walkClip: 'NlaTrack.001',
       walkFootfalls: [0.30, 0.92, 1.46, 2.05],
     },
@@ -286,7 +308,8 @@ export const MODEL_CONFIGS: Record<PieceColor, Record<PieceType, PieceModelConfi
       path: '/models/villain_queen.glb',
       scale: 1.32,
       rotation: [0, 0, 0],
-      introClip: 'NlaTrack',
+      // Mesmo motivo da rainha herói — sem introClip, pose de bind do rig.
+      noIntro: true,
       walkClip: 'NlaTrack.001',
       walkFootfalls: [0.30, 0.92, 1.46, 2.05],
       glow: false,

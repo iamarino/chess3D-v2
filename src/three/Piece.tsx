@@ -96,7 +96,13 @@ const PieceModel = memo(function PieceModel({
     config.introClip && config.introClip === config.attackClip
       ? `${config.introClip}${INTRO_CLONE_SUFFIX}`
       : config.introClip;
-  const introClipName = names.length > 0 ? (introSourceName && names.includes(introSourceName) ? introSourceName : names[0]) : null;
+  const introClipName = config.noIntro
+    ? null
+    : names.length > 0
+      ? introSourceName && names.includes(introSourceName)
+        ? introSourceName
+        : names[0]
+      : null;
   const walkClipName = config.walkClip && names.includes(config.walkClip) ? config.walkClip : null;
   const runClipName = config.runClip && names.includes(config.runClip) ? config.runClip : null;
   const attackClipName = config.attackClip && names.includes(config.attackClip) ? config.attackClip : null;
@@ -116,12 +122,28 @@ const PieceModel = memo(function PieceModel({
     };
     mixer.addEventListener('finished', onFinished);
 
+    // Congela a pose no tempo real de `introFreezeAt` (velocidade normal do
+    // clipe, só corta a exibição) — sem isso clipes de pose longos (ex.: as
+    // rainhas, 12,833s) ainda estariam tocando muito depois do resto do time
+    // já ter assentado no tabuleiro. `paused` só trava o avanço do tempo do
+    // clipe: o cross-fade de peso para as próximas ações (andar/atacar) em
+    // `tickPieceAnimation` continua funcionando normalmente a partir da pose
+    // congelada.
+    let freezeTimer: ReturnType<typeof setTimeout> | undefined;
+    if (config.introFreezeAt) {
+      freezeTimer = setTimeout(() => {
+        action.paused = true;
+        releaseFrameDemand(token);
+      }, config.introFreezeAt * 1000);
+    }
+
     return () => {
+      if (freezeTimer) clearTimeout(freezeTimer);
       releaseFrameDemand(token);
       mixer.removeEventListener('finished', onFinished);
       action.stop();
     };
-  }, [actions, introClipName, mixer, pieceId]);
+  }, [actions, introClipName, mixer, pieceId, config.introFreezeAt]);
 
   useEffect(() => {
     if (!attackClipName) return;
