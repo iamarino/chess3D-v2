@@ -33,15 +33,18 @@ export interface PieceAnimationRuntime {
   runClipName: string | null;
   attackClipName: string | null;
   introClipName: string | null;
+  danceClipName: string | null;
   walkMotion: WalkMotion | null;
   runMotion: WalkMotion | null;
   getWalkAction: () => THREE.AnimationAction | null | undefined;
   getRunAction: () => THREE.AnimationAction | null | undefined;
   getAttackAction: () => THREE.AnimationAction | null | undefined;
   getIntroAction: () => THREE.AnimationAction | null | undefined;
+  getDanceAction: () => THREE.AnimationAction | null | undefined;
   walkStarted: boolean;
   runStarted: boolean;
   attackStarted: boolean;
+  danceStarted: boolean;
 }
 
 /** Estado de movimento/animacao de uma peça — compartilhado entre `Piece`, `PieceModel` e o manager. */
@@ -55,7 +58,7 @@ export interface PieceMotionRuntime {
   pieceWalkAnimation: boolean;
   pieceWalkTempo: number;
   phase: number | null;
-  action: 'idle' | 'attack';
+  action: 'idle' | 'attack' | 'dance';
   locomotion: 'walk' | 'run' | null;
   walk: WalkState | null;
   glide: GlideState | null;

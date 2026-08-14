@@ -1,4 +1,5 @@
 import { AudioBridge } from '@/components/AudioBridge';
+import { CheckmateCelebration } from '@/components/CheckmateCelebration';
 import { ChessBoard3D } from '@/components/ChessBoard3D';
 import { GameHUD } from '@/components/GameHUD';
 import { LeftToolbar } from '@/components/LeftToolbar';
@@ -16,6 +17,7 @@ export default function Home() {
       <GameHUD />
       <LeftToolbar />
       <PromotionPicker />
+      <CheckmateCelebration />
       <SettingsMenu />
       <OnlineLobby />
       <AudioBridge />

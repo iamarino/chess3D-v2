@@ -102,6 +102,16 @@ export interface PieceModelConfig {
    */
   hitClip?: string;
   /**
+   * Clipe tocado em loop, no lugar, enquanto a peça comemora uma vitória por
+   * xeque-mate (ver `CheckmateCelebration.tsx` e `PieceMotionManager.setDancing`).
+   * Só as peças com este campo declarado dançam — as demais ficam paradas na
+   * comemoração. Hoje só as torres têm um clipe de dança/comemoração já
+   * identificado (`dança_02`/`comemoração` nos comentários acima) e com
+   * deslocamento líquido baixo o bastante para tocar em loop sem a peça
+   * derivar para fora da casa.
+   */
+  danceClip?: string;
+  /**
    * Desliga o brilho por time (`applyGlow`) para este modelo. Default `true`.
    * O critério de brilho (`isGlowing`) é por cor de pixel, não por região da
    * malha — em texturas onde pele/cabelo caem no mesmo tom saturado das
@@ -202,6 +212,10 @@ export const MODEL_CONFIGS: Record<PieceColor, Record<PieceType, PieceModelConfi
       walkFootfalls: [0.29, 0.74, 1.2, 1.66],
       runClip: 'NlaTrack',
       runFootfalls: [0.25, 0.5, 0.75],
+      // "dança_02" — não usada em nenhuma outra ação; deslocamento líquido
+      // baixo (amp=0.171), então serve para tocar em loop na comemoração de
+      // xeque-mate sem a peça derivar para fora da casa (ver `danceClip`).
+      danceClip: 'NlaTrack.002',
     },
     // Tripo-generated com rig + 3 clipes, já Y-up (altura bruta 0.9997) —
     // escala escolhida para bater a altura renderizada do bispo trimesh que
@@ -376,6 +390,10 @@ export const MODEL_CONFIGS: Record<PieceColor, Record<PieceType, PieceModelConfi
       runFootfalls: [0.34, 0.63, 0.96],
       attackClip: 'NlaTrack.002',
       hitClip: 'NlaTrack.004',
+      // "comemoração" — descartada como introClip (ver nota acima), mas
+      // deslocamento líquido baixíssimo (0.015 un. de mundo) a torna segura
+      // para tocar em loop na comemoração de xeque-mate.
+      danceClip: 'NlaTrack.003',
     },
     // Tripo-generated com rig + 2 clipes, mesma altura bruta do bispo herói
     // (0.9996) — mesma escala. Frente já olha para o centro do tabuleiro em

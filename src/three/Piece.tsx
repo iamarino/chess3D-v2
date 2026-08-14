@@ -106,6 +106,7 @@ const PieceModel = memo(function PieceModel({
   const walkClipName = config.walkClip && names.includes(config.walkClip) ? config.walkClip : null;
   const runClipName = config.runClip && names.includes(config.runClip) ? config.runClip : null;
   const attackClipName = config.attackClip && names.includes(config.attackClip) ? config.attackClip : null;
+  const danceClipName = config.danceClip && names.includes(config.danceClip) ? config.danceClip : null;
 
   useEffect(() => {
     if (!introClipName) return;
@@ -164,15 +165,18 @@ const PieceModel = memo(function PieceModel({
       runClipName,
       attackClipName,
       introClipName,
+      danceClipName,
       walkMotion,
       runMotion,
       getWalkAction: () => (walkClipName ? actions[walkClipName] : undefined),
       getRunAction: () => (runClipName ? actions[runClipName] : undefined),
       getAttackAction: () => (attackClipName ? actions[attackClipName] : undefined),
       getIntroAction: () => (introClipName ? actions[introClipName] : undefined),
+      getDanceAction: () => (danceClipName ? actions[danceClipName] : undefined),
       walkStarted: false,
       runStarted: false,
       attackStarted: false,
+      danceStarted: false,
     };
 
     const onFinished = (event: { action: THREE.AnimationAction }) => {
@@ -188,7 +192,7 @@ const PieceModel = memo(function PieceModel({
       mixer.removeEventListener('finished', onFinished);
       pieceMotionManager.clearAnimation(pieceId);
     };
-  }, [pieceId, actions, mixer, walkClipName, runClipName, attackClipName, introClipName, walkMotion, runMotion]);
+  }, [pieceId, actions, mixer, walkClipName, runClipName, attackClipName, introClipName, danceClipName, walkMotion, runMotion]);
 
   return (
     <group ref={animationRoot}>
@@ -252,6 +256,12 @@ function PieceInner({ piece }: PieceProps) {
     pieceMotionManager.register(runtime);
     return () => pieceMotionManager.unregister(piece.id);
   }, [runtime, piece.id]);
+
+  const celebrationWinner = useGameStore((s) => s.celebrationWinner);
+  useEffect(() => {
+    if (!config.danceClip) return;
+    pieceMotionManager.setDancing(piece.id, celebrationWinner === piece.color);
+  }, [celebrationWinner, piece.id, piece.color, config.danceClip]);
 
   useEffect(() => {
     runtime.config = config;

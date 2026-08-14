@@ -26,28 +26,37 @@ function actionWeightSettling(action: THREE.AnimationAction | null | undefined, 
 function animationWeightsSettling(anim: PieceAnimationRuntime, runtime: PieceMotionRuntime): boolean {
   const walking = runtime.phase !== null;
   const attacking = runtime.action === 'attack';
+  const dancing = runtime.action === 'dance';
   const locomotion = runtime.locomotion;
 
   if (
     actionWeightSettling(anim.getWalkAction(), walking && locomotion === 'walk' ? 1 : 0) ||
     actionWeightSettling(anim.getRunAction(), walking && locomotion === 'run' ? 1 : 0) ||
-    actionWeightSettling(anim.getAttackAction(), attacking ? 1 : 0)
+    actionWeightSettling(anim.getAttackAction(), attacking ? 1 : 0) ||
+    actionWeightSettling(anim.getDanceAction(), dancing ? 1 : 0)
   ) {
     return true;
   }
 
   const introAction = anim.getIntroAction();
   if (introAction) {
-    const introTarget = walking || attacking ? 0 : 1;
+    const introTarget = walking || attacking || dancing ? 0 : 1;
     if (actionWeightSettling(introAction, introTarget)) return true;
   }
 
-  return anim.walkStarted || anim.runStarted || anim.attackStarted;
+  return anim.walkStarted || anim.runStarted || anim.attackStarted || anim.danceStarted;
 }
 
-/** True enquanto a peça ainda precisa de quadros (movimento, golpe, blend ou escala de seleção). */
+/** True enquanto a peça ainda precisa de quadros (movimento, golpe, dança, blend ou escala de seleção). */
 export function runtimeNeedsAnimationFrames(runtime: PieceMotionRuntime): boolean {
-  if (runtime.walk || runtime.glide || runtime.captureTarget || runtime.strikePhase || runtime.action === 'attack') {
+  if (
+    runtime.walk ||
+    runtime.glide ||
+    runtime.captureTarget ||
+    runtime.strikePhase ||
+    runtime.action === 'attack' ||
+    runtime.action === 'dance'
+  ) {
     return true;
   }
 
@@ -96,6 +105,7 @@ export function tickPieceAnimation(runtime: PieceMotionRuntime, delta: number): 
 
   const walking = runtime.phase !== null;
   const attacking = runtime.action === 'attack';
+  const dancing = runtime.action === 'dance';
   const locomotion = runtime.locomotion;
 
   driveLocomotion(
@@ -131,9 +141,21 @@ export function tickPieceAnimation(runtime: PieceMotionRuntime, delta: number): 
     attackAction.weight = THREE.MathUtils.damp(attackAction.weight, attacking ? 1 : 0, BLEND_LAMBDA, delta);
   }
 
+  const danceAction = anim.getDanceAction();
+  if (anim.danceClipName && danceAction) {
+    if (dancing && !anim.danceStarted) {
+      danceAction.reset().play();
+      anim.danceStarted = true;
+    } else if (!dancing) {
+      anim.danceStarted = false;
+    }
+    danceAction.weight = THREE.MathUtils.damp(danceAction.weight, dancing ? 1 : 0, BLEND_LAMBDA, delta);
+    if (!dancing && danceAction.weight < WEIGHT_EPS) danceAction.stop();
+  }
+
   const introAction = anim.getIntroAction();
   if (anim.introClipName && introAction) {
-    const idleTarget = walking || attacking ? 0 : 1;
+    const idleTarget = walking || attacking || dancing ? 0 : 1;
     introAction.weight = THREE.MathUtils.damp(introAction.weight, idleTarget, BLEND_LAMBDA, delta);
   }
 

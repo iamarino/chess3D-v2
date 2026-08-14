@@ -49,12 +49,19 @@ interface GameStore {
    */
   pendingGhost: CapturedGhost | null;
   pendingPromotion: PendingPromotion | null;
+  /**
+   * Time vencedor durante a comemoração de xeque-mate — ligado/desligado por
+   * `CheckmateCelebration.tsx` (não pelo `GameManager`, que não sabe de
+   * temporização de UI). Só as peças com `danceClip` reagem (ver `Piece.tsx`).
+   */
+  celebrationWinner: PieceColor | null;
   select: (square: Square) => void;
   promote: (type: PieceType) => void;
   undo: () => void;
   reset: () => void;
   removeGhost: (ghostId: string) => void;
   releasePendingGhost: () => void;
+  setCelebrationWinner: (winner: PieceColor | null) => void;
 }
 
 export const useGameStore = create<GameStore>((set) => {
@@ -121,6 +128,7 @@ export const useGameStore = create<GameStore>((set) => {
       capturedGhosts: [],
       pendingGhost: null,
       pendingPromotion: null,
+      celebrationWinner: null,
     });
   });
 
@@ -134,6 +142,7 @@ export const useGameStore = create<GameStore>((set) => {
     capturedGhosts: [],
     pendingGhost: null,
     pendingPromotion: null,
+    celebrationWinner: null,
     select: (square) => manager.selectSquare(square),
     promote: (type) => manager.promotePawn(type),
     undo: () => manager.undo(),
@@ -141,5 +150,6 @@ export const useGameStore = create<GameStore>((set) => {
     removeGhost: (ghostId) => set((s) => ({ capturedGhosts: s.capturedGhosts.filter((g) => g.ghostId !== ghostId) })),
     releasePendingGhost: () =>
       set((s) => (s.pendingGhost ? { capturedGhosts: [...s.capturedGhosts, s.pendingGhost], pendingGhost: null } : {})),
+    setCelebrationWinner: (winner) => set({ celebrationWinner: winner }),
   };
 });

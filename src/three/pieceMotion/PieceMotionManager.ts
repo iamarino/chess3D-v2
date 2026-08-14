@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { requestFrame } from '../frameInvalidate';
 import { beginPieceTravel, runtimeNeedsAnimationFrames, tickPieceAnimation, tickPieceMotion } from './tick';
 import type { PieceAnimationRuntime, PieceMotionRuntime } from './types';
 
@@ -35,6 +36,26 @@ class PieceMotionManager {
 
   beginTravelRuntime(runtime: PieceMotionRuntime, from: THREE.Vector3, target: THREE.Vector3): void {
     beginPieceTravel(runtime, from, target);
+  }
+
+  /**
+   * Liga/desliga a dança de comemoração de uma peça. Só entra em `dance` se a
+   * peça estiver ociosa (nunca interrompe um golpe ou uma caminhada em curso —
+   * na prática não deveria haver nenhuma jogada em andamento depois do
+   * xeque-mate, mas o guard evita cravar a ação por cima de um estado real).
+   */
+  setDancing(id: string, dancing: boolean): void {
+    const entry = this.entries.get(id);
+    if (!entry) return;
+    if (dancing) {
+      if (entry.action === 'idle' && !entry.walk && !entry.captureTarget && !entry.strikePhase) {
+        entry.action = 'dance';
+        requestFrame();
+      }
+    } else if (entry.action === 'dance') {
+      entry.action = 'idle';
+      requestFrame();
+    }
   }
 
   tick(delta: number): void {
