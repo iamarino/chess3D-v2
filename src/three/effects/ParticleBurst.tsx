@@ -1,8 +1,9 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import { acquireFrameDemand, releaseFrameDemand } from '../frameInvalidate';
 
 interface ParticleBurstProps {
   position: [number, number, number];
@@ -30,6 +31,12 @@ export function ParticleBurst({
   const startTime = useRef<number | null>(null);
   const done = useRef(false);
   const dummy = useMemo(() => new THREE.Object3D(), []);
+  const demandToken = useMemo(() => `burst-${Math.random().toString(36).slice(2)}`, []);
+
+  useEffect(() => {
+    acquireFrameDemand(demandToken);
+    return () => releaseFrameDemand(demandToken);
+  }, [demandToken]);
 
   // Lazy state initializer (not useMemo): React only guarantees this runs
   // once per mount, so the burst's random spread stays stable for its

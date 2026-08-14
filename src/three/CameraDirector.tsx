@@ -40,6 +40,10 @@ export function CameraDirector({ controlsRef, home }: CameraDirectorProps) {
   const isMobile = useThree((s) => s.size.width) <= MOBILE_BREAKPOINT;
   const gameManager = useGameStore((s) => s.manager);
   const cinematicCamera = useSettingsStore((s) => s.cinematicCamera);
+  const isOnline = useNetworkStore((s) => s.status) === 'matched';
+  // Online: cutscenes travam o OrbitControls no meio do turno do adversário —
+  // respeita a preferência salva, mas não dispara enquanto a partida estiver ativa.
+  const cinematicActive = cinematicCamera && !isOnline;
   const myColor = useNetworkStore((s) => s.myColor);
   const cameraManagerRef = useRef<CameraManager | null>(null);
 
@@ -84,17 +88,17 @@ export function CameraDirector({ controlsRef, home }: CameraDirectorProps) {
 
   useEffect(() => {
     const offCaptured = gameManager.events.on('piece-captured', ({ to }) => {
-      if (cinematicCamera) cameraManagerRef.current?.focusOnCapture(vectorAt(to));
+      if (cinematicActive) cameraManagerRef.current?.focusOnCapture(vectorAt(to));
     });
 
     const offCheck = gameManager.events.on('check', ({ color }) => {
-      if (!cinematicCamera) return;
+      if (!cinematicActive) return;
       const king = gameManager.getState().pieces.find((p) => p.type === 'king' && p.color === color);
       if (king) cameraManagerRef.current?.focusOnCheck(vectorAt(king.square));
     });
 
     const offCheckmate = gameManager.events.on('checkmate', ({ winner }) => {
-      if (!cinematicCamera) return;
+      if (!cinematicActive) return;
       const state = gameManager.getState();
       const loserColor = winner === 'hero' ? 'villain' : 'hero';
       const defeatedKing = state.pieces.find((p) => p.type === 'king' && p.color === loserColor);
@@ -114,7 +118,7 @@ export function CameraDirector({ controlsRef, home }: CameraDirectorProps) {
       offCheckmate();
       offReset();
     };
-  }, [gameManager, cinematicCamera]);
+  }, [gameManager, cinematicActive]);
 
   return null;
 }

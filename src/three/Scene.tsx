@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useRef } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { ContactShadows, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
@@ -18,6 +18,7 @@ import { GlowPulse } from './effects/GlowPulse';
 import { Environment } from './Environment';
 import { GhostPiece } from './GhostPiece';
 import { Piece } from './Piece';
+import { DemandFrameLoop } from './pieceMotion/DemandFrameLoop';
 import { preloadAllPieceModels } from './ModelLoader';
 
 const theme = heroesVillainsTheme;
@@ -71,6 +72,22 @@ function PiecesReadySignal({ onReady }: { onReady: () => void }) {
   return null;
 }
 
+function SceneControls({ controlsRef }: { controlsRef: React.RefObject<OrbitControlsImpl | null> }) {
+  const invalidate = useThree((s) => s.invalidate);
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      enablePan={false}
+      minDistance={5}
+      maxDistance={14}
+      minPolarAngle={Math.PI / 6}
+      maxPolarAngle={Math.PI / 2.15}
+      onChange={() => invalidate()}
+    />
+  );
+}
+
 export function Scene({ onPiecesReady }: { onPiecesReady: () => void }) {
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const quality = useSettingsStore((s) => s.quality);
@@ -78,7 +95,7 @@ export function Scene({ onPiecesReady }: { onPiecesReady: () => void }) {
   const preset = QUALITY_PRESETS[quality];
 
   return (
-    <Canvas shadows={preset.shadows} dpr={preset.dpr} camera={{ position: [0, 8, 7], fov: 40 }}>
+    <Canvas frameloop="demand" shadows={preset.shadows} dpr={preset.dpr} camera={{ position: [0, 8, 7], fov: 40 }}>
       <color attach="background" args={[theme.environment.backgroundColor]} />
       <Environment />
       <ambientLight intensity={0.85} />
@@ -99,6 +116,7 @@ export function Scene({ onPiecesReady }: { onPiecesReady: () => void }) {
         <Suspense fallback={null}>
           <Pieces />
           <Ghosts />
+          <DemandFrameLoop />
           <PiecesReadySignal onReady={onPiecesReady} />
         </Suspense>
         <CheckAura />
@@ -114,14 +132,7 @@ export function Scene({ onPiecesReady }: { onPiecesReady: () => void }) {
       {preset.contactShadows && (
         <ContactShadows position={[0, -0.005, 0]} opacity={0.35} scale={12} blur={2.2} far={5} />
       )}
-      <OrbitControls
-        ref={controlsRef}
-        enablePan={false}
-        minDistance={5}
-        maxDistance={14}
-        minPolarAngle={Math.PI / 6}
-        maxPolarAngle={Math.PI / 2.15}
-      />
+      <SceneControls controlsRef={controlsRef} />
       <CameraDirector controlsRef={controlsRef} home={HOME_CAMERA} />
     </Canvas>
   );

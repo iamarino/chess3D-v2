@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { applyMovePatch } from '@/core/chess/applyMovePatch';
 import { GameManager } from '@/core/game/GameManager';
 import type { ChessPiece, GameState, Move, PieceColor, PieceType, Square } from '@/core/chess/types';
 import { getModelConfig } from '@/three/ModelLoader';
@@ -67,9 +68,9 @@ export const useGameStore = create<GameStore>((set) => {
     set({ selectedSquare: null, legalMoves: [] });
   });
 
-  manager.events.on('piece-moved', ({ move }) => {
-    set({
-      state: manager.getState(),
+  manager.events.on('piece-moved', ({ move, result }) => {
+    set((s) => ({
+      state: applyMovePatch(s.state, result),
       selectedSquare: null,
       legalMoves: [],
       lastMove: { from: move.from, to: move.to },
@@ -78,7 +79,7 @@ export const useGameStore = create<GameStore>((set) => {
       // assumindo que não foi captura.
       lastCapture: null,
       pendingPromotion: null,
-    });
+    }));
   });
 
   manager.events.on('piece-captured', ({ attacker, defender }) => {

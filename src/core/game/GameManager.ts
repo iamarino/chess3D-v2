@@ -32,17 +32,17 @@ export class GameManager {
   selectSquare(square: Square): void {
     if (this.pendingPromotion) return;
 
-    const state = this.engine.getState();
-    if (this.localPlayerColor && state.turn !== this.localPlayerColor) return;
+    const turn = this.engine.getTurn();
+    if (this.localPlayerColor && turn !== this.localPlayerColor) return;
 
-    const pieceAtSquare = state.pieces.find((p) => p.square === square) ?? null;
+    const pieceAtSquare = this.engine.getPieceAt(square);
 
     if (this.selectedSquare === square) {
       this.deselect();
       return;
     }
 
-    if (pieceAtSquare && pieceAtSquare.color === state.turn) {
+    if (pieceAtSquare && pieceAtSquare.color === turn) {
       this.selectedSquare = square;
       const legalMoves = this.engine.getLegalMoves(square);
       this.events.emit('piece-selected', { piece: pieceAtSquare, legalMoves });
@@ -72,10 +72,9 @@ export class GameManager {
 
     const requiresPromotion = candidates.some((m) => m.promotion);
     if (requiresPromotion) {
-      const state = this.engine.getState();
-      const piece = state.pieces.find((p) => p.square === from) ?? null;
+      const piece = this.engine.getPieceAt(from);
       this.pendingPromotion = { from, to };
-      this.events.emit('promotion-pending', { from, to, color: piece?.color ?? state.turn });
+      this.events.emit('promotion-pending', { from, to, color: piece?.color ?? this.engine.getTurn() });
       return;
     }
 
@@ -95,11 +94,10 @@ export class GameManager {
   }
 
   private executeMove(from: Square, to: Square, promotion?: PieceType, isRemote = false): void {
-    const stateBefore = this.engine.getState();
-    const attacker: ChessPiece | null = stateBefore.pieces.find((p) => p.square === from) ?? null;
+    const attacker: ChessPiece | null = this.engine.getPieceAt(from);
 
     const result = this.engine.move(from, to, promotion);
-    if (!result.valid || !result.move) return;
+    if (!result.valid || !result.move || !result.patch) return;
 
     this.events.emit('piece-moved', { move: result.move, result, isRemote });
 
@@ -112,8 +110,7 @@ export class GameManager {
       });
     }
 
-    const state = this.engine.getState();
-    this.events.emit('turn-changed', { turn: state.turn });
+    this.events.emit('turn-changed', { turn: result.patch.turn });
 
     if (result.checkmate && attacker) {
       const winner: PieceColor = attacker.color;
@@ -126,7 +123,7 @@ export class GameManager {
       this.events.emit('draw', {});
       this.events.emit('game-over', { reason: 'draw', winner: null });
     } else if (result.check) {
-      this.events.emit('check', { color: state.turn });
+      this.events.emit('check', { color: result.patch.turn });
     }
   }
 

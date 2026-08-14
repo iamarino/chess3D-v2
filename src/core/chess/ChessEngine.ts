@@ -1,6 +1,6 @@
 import { Chess } from 'chess.js';
 import type { Color, PieceSymbol, Square as ChessJsSquare } from 'chess.js';
-import type { ChessPiece, GameState, Move, MoveResult, PieceColor, PieceType, Square } from './types';
+import type { ChessPiece, GameState, Move, MoveResult, MoveStatePatch, PieceColor, PieceType, PieceUpdate, Square } from './types';
 
 const PIECE_TYPE_MAP: Record<PieceSymbol, PieceType> = {
   p: 'pawn',
@@ -68,6 +68,24 @@ export class ChessEngine {
     }));
   }
 
+  /** Lê uma peça só pela casa — sem montar o array inteiro do tabuleiro. */
+  getPieceAt(square: Square): ChessPiece | null {
+    const cell = this.chess.get(square as ChessJsSquare);
+    if (!cell) return null;
+    const id = this.squareToId.get(square);
+    if (!id) return null;
+    return {
+      id,
+      type: PIECE_TYPE_MAP[cell.type],
+      color: colorToPieceColor(cell.color),
+      square,
+    };
+  }
+
+  getTurn(): PieceColor {
+    return colorToPieceColor(this.chess.turn());
+  }
+
   move(from: Square, to: Square, promotion?: PieceType): MoveResult {
     let result;
     try {
@@ -87,6 +105,7 @@ export class ChessEngine {
         draw: false,
         promotion: false,
         san: null,
+        patch: null,
       };
     }
 
@@ -122,14 +141,41 @@ export class ChessEngine {
     this.squareToId.delete(from);
     if (movingId) this.squareToId.set(to, movingId);
 
+    const removedPieceIds: string[] = [];
+    const pieceUpdates: PieceUpdate[] = [];
+
+    if (capturedPiece) {
+      removedPieceIds.push(capturedPiece.id);
+    }
+
+    if (movingId) {
+      pieceUpdates.push({
+        id: movingId,
+        square: to,
+        ...(result.isPromotion() && promotion ? { type: promotion } : {}),
+      });
+    }
+
     if (result.isKingsideCastle() || result.isQueensideCastle()) {
       const rank = from[1];
       const rookFrom = result.isKingsideCastle() ? `h${rank}` : `a${rank}`;
       const rookTo = result.isKingsideCastle() ? `f${rank}` : `d${rank}`;
       const rookId = this.squareToId.get(rookFrom);
       this.squareToId.delete(rookFrom);
-      if (rookId) this.squareToId.set(rookTo, rookId);
+      if (rookId) {
+        this.squareToId.set(rookTo, rookId);
+        pieceUpdates.push({ id: rookId, square: rookTo });
+      }
     }
+
+    const patch: MoveStatePatch = {
+      removedPieceIds,
+      pieceUpdates,
+      turn: colorToPieceColor(this.chess.turn()),
+      gameOver: this.chess.isGameOver(),
+      history: this.chess.history(),
+      fen: this.chess.fen(),
+    };
 
     return {
       valid: true,
@@ -141,6 +187,7 @@ export class ChessEngine {
       draw: this.chess.isDraw(),
       promotion: result.isPromotion(),
       san: result.san,
+      patch,
     };
   }
 

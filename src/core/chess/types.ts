@@ -17,6 +17,23 @@ export interface Move {
   promotion?: PieceType;
 }
 
+/** Atualização mínima de uma peça após um lance — só id, casa e tipo (promoção). */
+export interface PieceUpdate {
+  id: string;
+  square: Square;
+  type?: PieceType;
+}
+
+/** Delta do tabuleiro após um lance válido, sem varrer todas as casas. */
+export interface MoveStatePatch {
+  removedPieceIds: string[];
+  pieceUpdates: PieceUpdate[];
+  turn: PieceColor;
+  gameOver: boolean;
+  history: string[];
+  fen: string;
+}
+
 export interface MoveResult {
   valid: boolean;
   move: Move | null;
@@ -27,6 +44,8 @@ export interface MoveResult {
   draw: boolean;
   promotion: boolean;
   san: string | null;
+  /** Preenchido só quando `valid` — patch incremental para o store React. */
+  patch: MoveStatePatch | null;
 }
 
 export interface GameState {

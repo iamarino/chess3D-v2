@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { GraphicsQuality } from '@/store/useSettingsStore';
 import { DEFAULT_PIECE_MODEL_OFFSET, useSettingsStore } from '@/store/useSettingsStore';
+import { useNetworkStore } from '@/store/useNetworkStore';
 import { useUIStore } from '@/store/useUIStore';
 import { BOARD_COLOR_SCHEMES } from '@/themes/boardSchemes';
 
@@ -107,6 +108,7 @@ export function SettingsMenu() {
   const setQuality = useSettingsStore((s) => s.setQuality);
   const cinematicCamera = useSettingsStore((s) => s.cinematicCamera);
   const setCinematicCamera = useSettingsStore((s) => s.setCinematicCamera);
+  const isOnline = useNetworkStore((s) => s.status) === 'matched';
   const muted = useSettingsStore((s) => s.muted);
   const setMuted = useSettingsStore((s) => s.setMuted);
   const masterVolume = useSettingsStore((s) => s.masterVolume);
@@ -344,10 +346,16 @@ export function SettingsMenu() {
             <input
               type="checkbox"
               checked={cinematicCamera}
+              disabled={isOnline}
               onChange={(event) => setCinematicCamera(event.target.checked)}
-              className="h-4 w-4"
+              className="h-4 w-4 disabled:cursor-not-allowed disabled:opacity-50"
             />
           </label>
+          {isOnline && (
+            <span className="mt-1 block px-1 text-xs text-zinc-500">
+              Desligada automaticamente durante partidas online para não travar a câmera entre lances.
+            </span>
+          )}
         </section>
 
         <section>

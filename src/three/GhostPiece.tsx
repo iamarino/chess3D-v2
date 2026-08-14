@@ -16,6 +16,7 @@ import type { ChessPiece } from '@/core/chess/types';
 import { DEFAULT_PIECE_MODEL_OFFSET, useSettingsStore } from '@/store/useSettingsStore';
 import { cloneSkinnedScene, getModelConfig } from './ModelLoader';
 import { squareToPosition } from './boardUtils';
+import { acquireFrameDemand, releaseFrameDemand } from './frameInvalidate';
 
 export function GhostPiece({
   piece,
@@ -91,12 +92,21 @@ export function GhostPiece({
     action.clampWhenFinished = true;
     action.reset().play();
 
+    const token = `ghost-${piece.id}`;
+    acquireFrameDemand(token);
+
     const onFinished = (event: { action: THREE.AnimationAction }) => {
-      if (event.action === action) onDoneRef.current();
+      if (event.action === action) {
+        releaseFrameDemand(token);
+        onDoneRef.current();
+      }
     };
     mixer.addEventListener('finished', onFinished);
-    return () => mixer.removeEventListener('finished', onFinished);
-  }, [actions, clipName, mixer, standing]);
+    return () => {
+      releaseFrameDemand(token);
+      mixer.removeEventListener('finished', onFinished);
+    };
+  }, [actions, clipName, mixer, standing, piece.id]);
 
   return (
     <group position={squareToPosition(piece.square)}>

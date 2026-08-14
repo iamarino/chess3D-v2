@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useGameStore } from '@/store/useGameStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { getBoardScheme } from '@/themes/boardSchemes';
+import { requestFrame } from './frameInvalidate';
 import { FILES, RANKS, squareToPosition } from './boardUtils';
 
 interface SquareInfo {
@@ -40,6 +41,10 @@ export function Board() {
 
   const occupiedSquares = useMemo(() => new Set(pieces.map((p) => p.square)), [pieces]);
   const legalTargets = useMemo(() => new Set(legalMoves.map((m) => m.to)), [legalMoves]);
+
+  useEffect(() => {
+    requestFrame();
+  }, [hoveredSquare]);
 
   useFrame((state) => {
     if (!discoFloor) return;

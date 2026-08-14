@@ -1,6 +1,7 @@
 import gsap from 'gsap';
 import * as THREE from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
+import { requestFrame } from './frameInvalidate';
 
 export interface CameraHome {
   position: THREE.Vector3;
@@ -80,6 +81,7 @@ export class CameraManager {
 
   private syncControls(): void {
     this.controls.update();
+    requestFrame();
   }
 
   focusOnCapture(targetPosition: THREE.Vector3, duration = CAPTURE_DURATION): void {
@@ -96,7 +98,10 @@ export class CameraManager {
     const hold = duration * 0.3;
     const returnDur = duration * 0.35;
 
-    this.timeline = gsap.timeline({ onComplete: () => this.unlockControls() });
+    this.timeline = gsap.timeline({
+      onComplete: () => this.unlockControls(),
+      onUpdate: () => requestFrame(),
+    });
     this.timeline
       .to(this.camera.position, { ...camPoint, duration: approach, ease: 'power2.inOut' }, 0)
       .to(
@@ -127,7 +132,10 @@ export class CameraManager {
     const hold = duration * 0.25;
     const returnDur = duration * 0.35;
 
-    this.timeline = gsap.timeline({ onComplete: () => this.unlockControls() });
+    this.timeline = gsap.timeline({
+      onComplete: () => this.unlockControls(),
+      onUpdate: () => requestFrame(),
+    });
     this.timeline
       .to(this.camera.position, { ...camPoint, duration: approach, ease: 'power2.out' }, 0)
       .to(
@@ -161,7 +169,10 @@ export class CameraManager {
       .add(new THREE.Vector3(0, 3, 0));
     const victoryLook = winnerSquareHint.clone().add(new THREE.Vector3(0, 0.5, 0));
 
-    this.timeline = gsap.timeline({ onComplete: () => this.unlockControls() });
+    this.timeline = gsap.timeline({
+      onComplete: () => this.unlockControls(),
+      onUpdate: () => requestFrame(),
+    });
     this.timeline
       // 1. fast dramatic push into the defeated king
       .to(this.camera.position, { ...closeUpPoint, duration: CHECKMATE_APPROACH_DURATION, ease: 'power3.inOut' }, 0)
@@ -196,7 +207,10 @@ export class CameraManager {
   returnHome(duration = 1): void {
     this.killTimeline();
     this.lockControls();
-    this.timeline = gsap.timeline({ onComplete: () => this.unlockControls() });
+    this.timeline = gsap.timeline({
+      onComplete: () => this.unlockControls(),
+      onUpdate: () => requestFrame(),
+    });
     this.timeline
       .to(this.camera.position, { ...this.home.position, duration, ease: 'power2.inOut' }, 0)
       .to(
