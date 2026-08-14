@@ -4,6 +4,9 @@ import { DEFAULT_BOARD_SCHEME_ID } from '@/themes/boardSchemes';
 
 export type GraphicsQuality = 'low' | 'medium' | 'high' | 'ultra';
 
+/** Backdrop procedural (sem trocar tema de peça/tabuleiro) — ver `Environment.tsx`. */
+export type Scenario = 'castle-day' | 'castle-night';
+
 export interface PieceModelOffset {
   x: number;
   y: number;
@@ -17,6 +20,7 @@ export type PieceModelKey = string;
 
 interface SettingsState {
   quality: GraphicsQuality;
+  scenario: Scenario;
   cinematicCamera: boolean;
   masterVolume: number;
   effectsVolume: number;
@@ -44,6 +48,7 @@ interface SettingsState {
   /** Dev-only fine grid over the hero pawn's home square, for reading off offsets while calibrating. */
   showCalibrationRuler: boolean;
   setQuality: (quality: GraphicsQuality) => void;
+  setScenario: (scenario: Scenario) => void;
   setCinematicCamera: (enabled: boolean) => void;
   setMasterVolume: (volume: number) => void;
   setEffectsVolume: (volume: number) => void;
@@ -61,6 +66,7 @@ export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       quality: 'low',
+      scenario: 'castle-day',
       cinematicCamera: true,
       masterVolume: 0.8,
       effectsVolume: 0.6,
@@ -79,6 +85,7 @@ export const useSettingsStore = create<SettingsState>()(
       pieceModelOffsets: { 'villain-pawn': { x: 0, y: 0, z: -0.17 }, 'villain-knight': { x: 0, y: 0, z: -0.17 } },
       showCalibrationRuler: false,
       setQuality: (quality) => set({ quality }),
+      setScenario: (scenario) => set({ scenario }),
       setCinematicCamera: (cinematicCamera) => set({ cinematicCamera }),
       setMasterVolume: (masterVolume) => set({ masterVolume }),
       setEffectsVolume: (effectsVolume) => set({ effectsVolume }),

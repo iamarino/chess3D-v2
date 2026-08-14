@@ -6,6 +6,8 @@ import { QUALITY_PRESETS, useSettingsStore } from '@/store/useSettingsStore';
 import { AmbientMotes } from './effects/AmbientMotes';
 import { CastleWalls } from './CastleWalls';
 import { Mountains } from './Mountains';
+import { Stars } from './Stars';
+import { WallTorches } from './WallTorches';
 
 const SKY_VERTEX_SHADER = `
   varying vec3 vWorldPosition;
@@ -68,14 +70,36 @@ function makeGrassTexture(worldWidth: number, worldHeight: number): THREE.Canvas
   return texture;
 }
 
+const SCENARIO_SKY = {
+  'castle-day': { top: '#4a90d9', bottom: '#cfe9f7', fog: '#cfe9f7', fogDensity: 0.015 },
+  'castle-night': { top: '#050814', bottom: '#241a3d', fog: '#0e0a1f', fogDensity: 0.02 },
+} as const;
+
+const SCENARIO_MOUNTAINS = {
+  'castle-day': { nearColor: '#5f6478', farColor: '#aebfd4', snowy: true },
+  'castle-night': { nearColor: '#181425', farColor: '#3a2f57', snowy: false },
+} as const;
+
+const SCENARIO_WALLS = {
+  'castle-day': { brickColors: ['#b3552f', '#a44a28', '#c05e37', '#9c4322'], mortarColor: '#c7bda8' },
+  'castle-night': { brickColors: ['#332a4d', '#2b2440', '#3d3459', '#251e38'], mortarColor: '#4a4166' },
+} as const;
+
 /**
- * A bright castle-balcony backdrop: gradient daytime sky, distant blocky
- * mountains, a crenellated parapet, atmospheric fog, and ambient motes.
- * Entirely procedural — no external assets.
+ * Dois cenários procedurais (sem trocar tema de peça/tabuleiro, ver
+ * `useSettingsStore.scenario`): balcão de castelo ao meio-dia (padrão) e
+ * cerco noturno — céu, montanhas e muralha trocam de paleta, ganham lua e
+ * estrelas; a luz principal (sol/lua) fica em `Scene.tsx`, que lê o mesmo
+ * `scenario`. Entirely procedural — no external assets.
  */
 export function Environment() {
   const quality = useSettingsStore((s) => s.quality);
+  const scenario = useSettingsStore((s) => s.scenario);
+  const isNight = scenario === 'castle-night';
   const motesCount = QUALITY_PRESETS[quality].ambientMotes;
+  const sky = SCENARIO_SKY[scenario];
+  const mountains = SCENARIO_MOUNTAINS[scenario];
+  const walls = SCENARIO_WALLS[scenario];
 
   const groundTexture = useMemo(() => makeGrassTexture(60, 60), []);
 
@@ -83,8 +107,8 @@ export function Environment() {
     () =>
       new THREE.ShaderMaterial({
         uniforms: {
-          topColor: { value: new THREE.Color('#4a90d9') },
-          bottomColor: { value: new THREE.Color('#cfe9f7') },
+          topColor: { value: new THREE.Color(sky.top) },
+          bottomColor: { value: new THREE.Color(sky.bottom) },
           offset: { value: 8 },
           exponent: { value: 0.6 },
         },
@@ -92,12 +116,14 @@ export function Environment() {
         fragmentShader: SKY_FRAGMENT_SHADER,
         side: THREE.BackSide,
       }),
-    [],
+    // Recriado quando o cenário muda — o `useMemo` fica preso na paleta
+    // capturada na primeira montagem se só os uniforms mudassem por dentro.
+    [sky.top, sky.bottom],
   );
 
   return (
     <>
-      <fogExp2 attach="fog" args={['#cfe9f7', 0.015]} />
+      <fogExp2 attach="fog" args={[sky.fog, sky.fogDensity]} />
       <mesh material={skyMaterial} renderOrder={-1}>
         <sphereGeometry args={[60, 32, 15]} />
       </mesh>
@@ -105,10 +131,28 @@ export function Environment() {
         <circleGeometry args={[30, 48]} />
         <meshStandardMaterial map={groundTexture} roughness={0.95} metalness={0.05} />
       </mesh>
-      <Mountains />
-      <CastleWalls />
-      <pointLight position={[0, 3, 6]} color="#ffb454" intensity={0.2} distance={12} />
-      <pointLight position={[0, 3, -6]} color="#8e2de2" intensity={0.2} distance={12} />
+      {isNight && (
+        <>
+          <Stars />
+          {/* Lua — esfera emissiva simples, sem luz própria (a luz "de lua" vem
+              do directionalLight frio em Scene.tsx, mantendo uma única fonte
+              de sombra). */}
+          <mesh position={[-14, 22, -30]}>
+            <sphereGeometry args={[2.4, 24, 24]} />
+            <meshBasicMaterial color="#f2f0e6" />
+          </mesh>
+          <WallTorches />
+        </>
+      )}
+      {/* `key` força remontar (chaves distintas por componente — repetir a
+          mesma entre irmãos, mesmo de tipos diferentes, dispara o aviso de
+          "two children with the same key" do React): as duas leem a paleta
+          só uma vez, no `useState`/`useMemo` inicial, então trocar de
+          cenário em tempo real não bastaria mudar as props. */}
+      <Mountains key={`mountains-${scenario}`} nearColor={mountains.nearColor} farColor={mountains.farColor} snowy={mountains.snowy} />
+      <CastleWalls key={`walls-${scenario}`} brickColors={[...walls.brickColors]} mortarColor={walls.mortarColor} />
+      <pointLight position={[0, 3, 6]} color="#ffb454" intensity={isNight ? 0.35 : 0.2} distance={12} />
+      <pointLight position={[0, 3, -6]} color="#8e2de2" intensity={isNight ? 0.4 : 0.2} distance={12} />
       {motesCount > 0 && <AmbientMotes count={motesCount} />}
     </>
   );

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { GraphicsQuality } from '@/store/useSettingsStore';
+import type { GraphicsQuality, Scenario } from '@/store/useSettingsStore';
 import { DEFAULT_PIECE_MODEL_OFFSET, useSettingsStore } from '@/store/useSettingsStore';
 import { useNetworkStore } from '@/store/useNetworkStore';
 import { useUIStore } from '@/store/useUIStore';
@@ -12,6 +12,11 @@ const THEMES = [
   { id: 'medieval', name: 'Medieval', available: false },
   { id: 'samurai', name: 'Samurai', available: false },
   { id: 'sci-fi', name: 'Sci-Fi', available: false },
+];
+
+const SCENARIOS: { value: Scenario; label: string; description: string }[] = [
+  { value: 'castle-day', label: 'Castelo ao meio-dia', description: 'Céu claro, sol a pino' },
+  { value: 'castle-night', label: 'Cerco noturno', description: 'Lua, estrelas e muralha sob luar' },
 ];
 
 const QUALITY_OPTIONS: { value: GraphicsQuality; label: string }[] = [
@@ -106,6 +111,8 @@ export function SettingsMenu() {
 
   const quality = useSettingsStore((s) => s.quality);
   const setQuality = useSettingsStore((s) => s.setQuality);
+  const scenario = useSettingsStore((s) => s.scenario);
+  const setScenario = useSettingsStore((s) => s.setScenario);
   const cinematicCamera = useSettingsStore((s) => s.cinematicCamera);
   const setCinematicCamera = useSettingsStore((s) => s.setCinematicCamera);
   const isOnline = useNetworkStore((s) => s.status) === 'matched';
@@ -168,6 +175,27 @@ export function SettingsMenu() {
               >
                 {theme.name}
                 {!theme.available && <span className="ml-2 text-xs">(em breve)</span>}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="mb-6">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-zinc-400">Cenário</h3>
+          <div className="flex flex-col gap-2">
+            {SCENARIOS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setScenario(option.value)}
+                className={`rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                  scenario === option.value
+                    ? 'bg-amber-500/20 text-amber-100'
+                    : 'bg-white/5 text-zinc-300 hover:bg-white/10'
+                }`}
+              >
+                {option.label}
+                <span className="block text-xs text-zinc-500">{option.description}</span>
               </button>
             ))}
           </div>

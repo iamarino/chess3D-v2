@@ -25,6 +25,14 @@ const theme = heroesVillainsTheme;
 
 preloadAllPieceModels();
 
+// Luz principal por cenário (sol ao meio-dia / luar) — mantida junto da
+// câmara/sombra em Scene.tsx porque é a única luz com `castShadow`; o resto
+// da paleta do cenário (céu, muralha, montanhas) fica em `Environment.tsx`.
+const SCENARIO_LIGHT = {
+  'castle-day': { background: theme.environment.backgroundColor, ambient: 0.85, sunColor: '#fff6e6', sunIntensity: 2 },
+  'castle-night': { background: '#0e0a1f', ambient: 0.32, sunColor: '#a9c0ff', sunIntensity: 0.55 },
+} as const;
+
 const HOME_CAMERA = {
   position: new THREE.Vector3(0, 8, 7),
   target: new THREE.Vector3(0, 0, 0),
@@ -91,18 +99,20 @@ function SceneControls({ controlsRef }: { controlsRef: React.RefObject<OrbitCont
 export function Scene({ onPiecesReady }: { onPiecesReady: () => void }) {
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const quality = useSettingsStore((s) => s.quality);
+  const scenario = useSettingsStore((s) => s.scenario);
   const showCalibrationRuler = useSettingsStore((s) => s.showCalibrationRuler);
   const preset = QUALITY_PRESETS[quality];
+  const light = SCENARIO_LIGHT[scenario];
 
   return (
     <Canvas frameloop="demand" shadows={preset.shadows} dpr={preset.dpr} camera={{ position: [0, 8, 7], fov: 40 }}>
-      <color attach="background" args={[theme.environment.backgroundColor]} />
+      <color attach="background" args={[light.background]} />
       <Environment />
-      <ambientLight intensity={0.85} />
+      <ambientLight intensity={light.ambient} />
       <directionalLight
         position={[5, 10, 5]}
-        intensity={2}
-        color="#fff6e6"
+        intensity={light.sunIntensity}
+        color={light.sunColor}
         castShadow={preset.shadows}
         shadow-mapSize={[preset.shadowMapSize, preset.shadowMapSize]}
         shadow-camera-left={-6}

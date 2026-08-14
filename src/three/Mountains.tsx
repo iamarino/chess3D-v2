@@ -47,12 +47,23 @@ interface MountainConfig {
   snowy: boolean;
 }
 
-const NEAR_COLOR = new THREE.Color('#5f6478');
-const FAR_COLOR = new THREE.Color('#aebfd4');
+const DEFAULT_NEAR_COLOR = '#5f6478';
+const DEFAULT_FAR_COLOR = '#aebfd4';
 
 /** Ring of distant blocky peaks framing the castle backdrop, with far peaks fading paler (atmospheric perspective). */
-export function Mountains() {
+export function Mountains({
+  nearColor = DEFAULT_NEAR_COLOR,
+  farColor = DEFAULT_FAR_COLOR,
+  snowy = true,
+}: {
+  nearColor?: string;
+  farColor?: string;
+  /** Desliga os topos brancos (picos nevados não combinam com todo cenário). */
+  snowy?: boolean;
+}) {
   const [configs] = useState<MountainConfig[]>(() => {
+    const near = new THREE.Color(nearColor);
+    const far = new THREE.Color(farColor);
     const count = 18;
     return Array.from({ length: count }, (_, i) => {
       const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
@@ -62,8 +73,8 @@ export function Mountains() {
       const height = 7 + Math.random() * 11;
       const baseSize = 5 + Math.random() * 5;
       const t = (dist - 24) / 16;
-      const rockColor = NEAR_COLOR.clone().lerp(FAR_COLOR, t).getStyle();
-      return { position: [x, -0.55, z] as [number, number, number], baseSize, height, rockColor, snowy: height > 12 };
+      const rockColor = near.clone().lerp(far, t).getStyle();
+      return { position: [x, -0.55, z] as [number, number, number], baseSize, height, rockColor, snowy: snowy && height > 12 };
     });
   });
 
