@@ -19,8 +19,25 @@ function vectorAt(square: string): THREE.Vector3 {
   return new THREE.Vector3(...squareToPosition(square));
 }
 
+// Abaixo desta largura de canvas (px) tratamos como tela de celular: o fov
+// vertical fixo do desktop deixa muito pouco campo de visão horizontal numa
+// tela em retrato (fov horizontal = f(fov vertical, aspect) — estreita junto
+// com o aspect), cortando as laterais do tabuleiro. Ler `size.width` do R3F
+// em vez de `window.innerWidth` porque é o que já reage a resize/rotação do
+// canvas sem listener próprio.
+const MOBILE_BREAKPOINT = 820;
+const DESKTOP_FOV = 40;
+const MOBILE_FOV = 58;
+const DESKTOP_MAX_DISTANCE = 14;
+const MOBILE_MAX_DISTANCE = 24;
+// Afasta a câmera "home" no celular, na mesma direção/ângulo do enquadramento
+// desktop — combinado com o fov maior acima, sobra campo de visão horizontal
+// suficiente para o tabuleiro inteiro (incluindo pilastras) caber na tela.
+const MOBILE_HOME_DISTANCE_SCALE = 1.3;
+
 export function CameraDirector({ controlsRef, home }: CameraDirectorProps) {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
+  const isMobile = useThree((s) => s.size.width) <= MOBILE_BREAKPOINT;
   const gameManager = useGameStore((s) => s.manager);
   const cinematicCamera = useSettingsStore((s) => s.cinematicCamera);
   const myColor = useNetworkStore((s) => s.myColor);
@@ -28,13 +45,16 @@ export function CameraDirector({ controlsRef, home }: CameraDirectorProps) {
 
   // Playing as villain: mirror the "home" framing so each player always
   // sees their own back rank at the bottom, like sitting across a real board.
+  // On a small screen, also pull the framing back so the whole board fits
+  // (see the MOBILE_* constants above).
   const effectiveHome = useMemo<CameraHome>(() => {
-    if (myColor !== 'villain') return home;
-    return {
-      position: new THREE.Vector3(home.position.x, home.position.y, -home.position.z),
-      target: home.target.clone(),
-    };
-  }, [home, myColor]);
+    const mirrored =
+      myColor === 'villain'
+        ? new THREE.Vector3(home.position.x, home.position.y, -home.position.z)
+        : home.position.clone();
+    const position = isMobile ? mirrored.multiplyScalar(MOBILE_HOME_DISTANCE_SCALE) : mirrored;
+    return { position, target: home.target.clone() };
+  }, [home, myColor, isMobile]);
 
   // Builds the CameraManager and snaps to the current home. Kept separate
   // from the event-subscription effect below so toggling unrelated settings
@@ -42,6 +62,13 @@ export function CameraDirector({ controlsRef, home }: CameraDirectorProps) {
   useEffect(() => {
     const controls = controlsRef.current;
     if (!controls) return;
+
+    // O prop `camera` do <Canvas> só configura a câmera na criação inicial —
+    // fov e distância máxima do orbit control precisam ser corrigidos aqui,
+    // à mão, sempre que o breakpoint mobile mudar.
+    camera.fov = isMobile ? MOBILE_FOV : DESKTOP_FOV;
+    camera.updateProjectionMatrix();
+    controls.maxDistance = isMobile ? MOBILE_MAX_DISTANCE : DESKTOP_MAX_DISTANCE;
 
     const cameraManager = new CameraManager(camera, controls, effectiveHome);
     camera.position.copy(effectiveHome.position);
@@ -53,7 +80,7 @@ export function CameraDirector({ controlsRef, home }: CameraDirectorProps) {
       cameraManager.dispose();
       cameraManagerRef.current = null;
     };
-  }, [camera, controlsRef, effectiveHome]);
+  }, [camera, controlsRef, effectiveHome, isMobile]);
 
   useEffect(() => {
     const offCaptured = gameManager.events.on('piece-captured', ({ to }) => {
