@@ -20,6 +20,7 @@ import { GhostPiece } from './GhostPiece';
 import { Piece } from './Piece';
 import { DemandFrameLoop } from './pieceMotion/DemandFrameLoop';
 import { preloadAllPieceModels } from './ModelLoader';
+import { squareToPosition } from './boardUtils';
 
 const theme = heroesVillainsTheme;
 
@@ -48,6 +49,29 @@ function Pieces() {
         <Piece key={piece.id} piece={piece} />
       ))}
     </>
+  );
+}
+
+/**
+ * Luz de destaque da peça selecionada — uma só, sempre montada, que só muda
+ * de posição/intensidade. Montar/desmontar uma `pointLight` muda a contagem
+ * de luzes da cena e obriga o three a recompilar o shader de todos os
+ * materiais, o que travava cada seleção.
+ */
+function SelectionLight() {
+  const selectedSquare = useGameStore((s) => s.selectedSquare);
+  const selectedColor = useGameStore((s) =>
+    s.selectedSquare ? (s.state.pieces.find((p) => p.square === s.selectedSquare)?.color ?? null) : null,
+  );
+  const [x, , z] = selectedSquare ? squareToPosition(selectedSquare) : [0, 0, 0];
+  const color = selectedColor ? theme.pieces[selectedColor].accentColor : '#ffffff';
+  return (
+    <pointLight
+      position={[x, 1.6, z]}
+      intensity={selectedColor ? 0.8 : 0}
+      color={color}
+      distance={2.8}
+    />
   );
 }
 
@@ -127,6 +151,7 @@ export function Scene({ onPiecesReady }: { onPiecesReady: () => void }) {
         <Board />
         <Suspense fallback={null}>
           <Pieces />
+          <SelectionLight />
           <Ghosts />
           <DemandFrameLoop />
           <PiecesReadySignal onReady={onPiecesReady} />

@@ -9,6 +9,23 @@ import { getBoardScheme } from '@/themes/boardSchemes';
 import { requestFrame } from './frameInvalidate';
 import { FILES, RANKS, squareToPosition } from './boardUtils';
 
+// Marcadores de jogada legal compartilhados por todas as casas — antes cada
+// seleção criava geometria e material novos para cada casa marcada.
+const MOVE_MARKER_GEOMETRY = new THREE.RingGeometry(0.28, 0.36, 32);
+const MOVE_MARKER_MATERIAL = new THREE.MeshStandardMaterial({
+  color: '#2ecc71',
+  transparent: true,
+  opacity: 0.85,
+  depthWrite: false,
+});
+const CAPTURE_MARKER_GEOMETRY = new THREE.RingGeometry(0.34, 0.46, 4);
+const CAPTURE_MARKER_MATERIAL = new THREE.MeshStandardMaterial({
+  color: '#ff5545',
+  transparent: true,
+  opacity: 0.9,
+  depthWrite: false,
+});
+
 interface SquareInfo {
   square: string;
   isLight: boolean;
@@ -112,16 +129,22 @@ export function Board() {
               />
             </mesh>
             {showLegalMoves && isLegal && !isCaptureTarget && (
-              <mesh position={[x, 0.02, z]} rotation={[-Math.PI / 2, 0, 0]}>
-                <ringGeometry args={[0.28, 0.36, 32]} />
-                <meshStandardMaterial color="#2ecc71" transparent opacity={0.85} depthWrite={false} />
-              </mesh>
+              <mesh
+                position={[x, 0.02, z]}
+                rotation={[-Math.PI / 2, 0, 0]}
+                geometry={MOVE_MARKER_GEOMETRY}
+                material={MOVE_MARKER_MATERIAL}
+                dispose={null}
+              />
             )}
             {showLegalMoves && isCaptureTarget && (
-              <mesh position={[x, 0.02, z]} rotation={[-Math.PI / 2, 0, 0]}>
-                <ringGeometry args={[0.34, 0.46, 4]} />
-                <meshStandardMaterial color="#ff5545" transparent opacity={0.9} depthWrite={false} />
-              </mesh>
+              <mesh
+                position={[x, 0.02, z]}
+                rotation={[-Math.PI / 2, 0, 0]}
+                geometry={CAPTURE_MARKER_GEOMETRY}
+                material={CAPTURE_MARKER_MATERIAL}
+                dispose={null}
+              />
             )}
           </group>
         );

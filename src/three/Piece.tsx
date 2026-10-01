@@ -6,7 +6,6 @@ import * as THREE from 'three';
 import type { ChessPiece } from '@/core/chess/types';
 import { useGameStore } from '@/store/useGameStore';
 import { DEFAULT_PIECE_MODEL_OFFSET, useSettingsStore } from '@/store/useSettingsStore';
-import { heroesVillainsTheme } from '@/themes/heroes-villains/theme';
 import { cloneSkinnedScene, getModelConfig, type PieceModelConfig } from './ModelLoader';
 import { squareToPosition } from './boardUtils';
 import { pieceMotionManager } from './pieceMotion/PieceMotionManager';
@@ -14,8 +13,6 @@ import { createPieceMotionRuntime } from './pieceMotion/tick';
 import type { PieceAnimationRuntime, PieceMotionRuntime } from './pieceMotion/types';
 import { acquireFrameDemand, releaseFrameDemand, requestFrame } from './frameInvalidate';
 import { createWalkMotion, type WalkMotion } from './walkMotion';
-
-const theme = heroesVillainsTheme;
 
 const motionCache = new Map<string, WalkMotion | null>();
 
@@ -47,6 +44,61 @@ function useLocomotionMotions(config: PieceModelConfig): { walk: WalkMotion | nu
   );
 }
 
+interface HitBox {
+  center: [number, number, number];
+  size: [number, number, number];
+}
+
+const hitBoxCache = new WeakMap<THREE.Object3D, HitBox>();
+const noRaycast = () => {};
+const HIT_BOX_HORIZONTAL_FACTOR = 0.6;
+
+/**
+ * Caixa de clique da peça, no espaço local da raiz do modelo — mesma para
+ * todos os clones de um GLB, então fica em cache pela cena original.
+ */
+function getHitBox(scene: THREE.Object3D, clone: THREE.Object3D): HitBox {
+  const cached = hitBoxCache.get(scene);
+  if (cached) return cached;
+
+  clone.updateMatrixWorld(true);
+  const toRootLocal = clone.matrixWorld.clone().invert();
+  const box = new THREE.Box3();
+  const meshBox = new THREE.Box3();
+  const matrix = new THREE.Matrix4();
+  clone.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    if (child instanceof THREE.SkinnedMesh) {
+      // A escala desses modelos costuma estar nos ossos: a caixa da geometria
+      // crua sai enorme, então aplica o esqueleto (uma vez por GLB).
+      child.skeleton.update();
+      child.computeBoundingBox();
+      meshBox.copy(child.boundingBox!);
+    } else {
+      const geometry = child.geometry as THREE.BufferGeometry;
+      if (!geometry.boundingBox) geometry.computeBoundingBox();
+      meshBox.copy(geometry.boundingBox!);
+    }
+    matrix.multiplyMatrices(toRootLocal, child.matrixWorld);
+    box.union(meshBox.applyMatrix4(matrix));
+  });
+
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  // Estreita na horizontal: a caixa inteira inclui braços/armas abertos e, com
+  // a câmera inclinada, a quina de cima de uma peça da frente roubava o clique
+  // da peça de trás.
+  const hitBox: HitBox = {
+    center: [center.x, center.y, center.z],
+    size: [size.x * HIT_BOX_HORIZONTAL_FACTOR, size.y, size.z * HIT_BOX_HORIZONTAL_FACTOR],
+  };
+  hitBoxCache.set(scene, hitBox);
+  return hitBox;
+}
+
+// Geometria compartilhada da caixa de clique — nunca renderizada.
+const hitBoxGeometry = new THREE.BoxGeometry(1, 1, 1);
+
 const PieceModel = memo(function PieceModel({
   pieceId,
   color,
@@ -65,10 +117,17 @@ const PieceModel = memo(function PieceModel({
   const animationRoot = useRef<THREE.Group>(null);
   const modelOffset = useSettingsStore((s) => s.pieceModelOffsets[`${color}-${type}`] ?? DEFAULT_PIECE_MODEL_OFFSET);
 
-  const cloned = useMemo(
-    () => cloneSkinnedScene(scene, color, config.glow !== false),
-    [scene, color, config.glow],
-  );
+  const cloned = useMemo(() => {
+    const clone = cloneSkinnedScene(scene, color, config.glow !== false);
+    // Raycast em SkinnedMesh aplica os ossos vértice a vértice — com 32 peças
+    // de alto polígono isso travava cada clique/hover. O clique vai para a
+    // caixa invisível abaixo.
+    clone.traverse((child) => {
+      if (child instanceof THREE.Mesh) child.raycast = noRaycast;
+    });
+    return clone;
+  }, [scene, color, config.glow]);
+  const hitBox = useMemo(() => getHitBox(scene, cloned), [scene, cloned]);
 
   const INTRO_CLONE_SUFFIX = '__intro-clone';
   const clips = useMemo(() => {
@@ -194,28 +253,23 @@ const PieceModel = memo(function PieceModel({
     };
   }, [pieceId, actions, mixer, walkClipName, runClipName, attackClipName, introClipName, danceClipName, walkMotion, runMotion]);
 
+  const modelPosition: [number, number, number] = [modelOffset.x, modelOffset.y, modelOffset.z];
+
   return (
     <group ref={animationRoot}>
-      <primitive
-        object={cloned}
-        position={[modelOffset.x, modelOffset.y, modelOffset.z]}
-        rotation={config.rotation}
-        scale={config.scale}
-      />
+      <primitive object={cloned} position={modelPosition} rotation={config.rotation} scale={config.scale} />
+      {/* Mesma transformação do modelo, para a caixa cobrir a peça em qualquer escala/offset. */}
+      <group position={modelPosition} rotation={config.rotation} scale={config.scale}>
+        <mesh
+          geometry={hitBoxGeometry}
+          position={hitBox.center}
+          scale={hitBox.size}
+          visible={false}
+          dispose={null}
+        />
+      </group>
     </group>
   );
-});
-
-const PieceSelectionLight = memo(function PieceSelectionLight({
-  square,
-  accentColor,
-}: {
-  square: string;
-  accentColor: string;
-}) {
-  const isSelected = useGameStore((s) => s.selectedSquare === square);
-  if (!isSelected) return null;
-  return <pointLight position={[0, 1.6, 0]} intensity={0.8} color={accentColor} distance={2.8} />;
 });
 
 interface PieceProps {
@@ -352,8 +406,6 @@ function PieceInner({ piece }: PieceProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [piece.square, piece.id, walkMotion, runMotion, pieceWalkAnimation, pieceWalkTempo, config.rotation, config.attackClip]);
 
-  const visual = theme.pieces[piece.color];
-
   return (
     <group
       ref={(node) => {
@@ -371,7 +423,6 @@ function PieceInner({ piece }: PieceProps) {
         walkMotion={walkMotion}
         runMotion={runMotion}
       />
-      <PieceSelectionLight square={piece.square} accentColor={visual.accentColor} />
     </group>
   );
 }
