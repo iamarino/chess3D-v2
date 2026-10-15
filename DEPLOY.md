@@ -80,3 +80,24 @@ docker logs chess3d-app --tail=50
 - O build do Next.js usa modo custom server (`server.js`), não o modo
   `standalone` — por isso a imagem final roda `npm ci --omit=dev` em vez de
   copiar um bundle standalone (ver comentário no topo do `Dockerfile`).
+
+## Nginx: resolver por requisição (alteração de 15/10/2026)
+
+Motivo: o `nginx -s reload` testa todos os `.conf` juntos. Com `proxy_pass http://<container>:porta` fixo, basta **um** app
+parado (container inexistente na rede) para o reload falhar com `host not found in upstream` e todos os outros apps
+darem 502 (IP antigo do container). Foi o que aconteceu no deploy do marcenariacnc.
+
+Ao (re)criar o `.conf` deste app na VPS, usar este formato. Dentro do `server { listen 443 ssl; ... }`:
+
+```nginx
+    # DNS interno do Docker: o nome é resolvido a cada requisição; app parado só dá 502 nele mesmo.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+```nginx
+    location /ws { set $up_app http://chess3d-app:3000; proxy_pass $up_app; ... }   # /ws chega igual
+    location /   { set $up_app http://chess3d-app:3000; proxy_pass $up_app; ... }
+```
+(No servidor o container se chama `xadrez-app` e o `.conf` está em `conf.d/xadrez.conf`, fora de `apps/`.)
+Com variável no `proxy_pass` o Nginx **não troca mais o prefixo da URL** sozinho: a URL original vai inteira ao backend
+(o `rewrite` abaixo é só para o caso em que o prefixo precisa ser tirado). Testar com `nginx -t` antes do reload.
+Cópia pronta dos `.conf` e script de aplicação: ver o histórico do projeto cnc (commit "Nginx: resolver por requisição").
